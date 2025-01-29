@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scan Reports</title>
+</head>
+<body>
+    <h1>Scan Reports</h1>
+    {% if reports %}
+    <table border="1">
+        <tr>
+            <th>Scanner</th>
+            <th>Scanned At</th>
+            <th>Download</th>
+        </tr>
+        {% for report in reports %}
+        <tr>
+            <td>{{ report[1] }}</td>
+            <td>{{ report[2] }}</td>
+            <td><a href="/download/{{ report[0] }}">Download</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No scan reports found. <a href="/scanning-page">Run a scan</a>.</p>
+    {% endif %}
+    <a href="/logout">Logout</a>
+</body>
+</html>
