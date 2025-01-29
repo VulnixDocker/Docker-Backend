@@ -1,3 +1,14 @@
+name: Docker Scanner CI/CD
+
+on:
+  push:                       # Runs when you push changes to GitHub
+    branches:
+      - main
+  pull_request:               # Runs when a pull request is created
+    branches:
+      - main
+  workflow_dispatch:          # Allows manual trigger from GitHub Actions UI
+
 jobs:
   scan:
     runs-on: ubuntu-latest
