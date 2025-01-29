@@ -29,17 +29,21 @@ jobs:
         run: |
           $env:DOCKER_BUILDKIT=0
           Write-Host "🚀 BuildKit Disabled! Using default Docker builder."
-          
-      - name: 🔍 Scan with Trivy (Without Pulling)
-        shell: pwsh
+      
+      - name: 🛠 Install Trivy (Using Docker)
+        shell: bash
         run: |
-          $IMAGE_NAME = "${{ github.event.inputs.docker_image }}"
-          if (-not $IMAGE_NAME) {
-            Write-Host "🚨 ERROR: No Docker image specified!"
-            exit 1
-          }
-          & "C:\Users\abhir\Downloads\trivy_tool\trivy.exe" image --no-progress $IMAGE_NAME | Out-File -FilePath trivy-report.txt
+          echo "🔹 Pulling Trivy Docker image..."
+          docker pull aquasec/trivy
+          echo "✅ Trivy Installed Successfully!"
 
+      - name: 🔍 Scan with Trivy (Using Docker)
+        shell: bash
+        run: |
+          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          echo "🔹 Scanning image: $IMAGE_NAME"
+          docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt
+          echo "✅ Trivy Scan Completed!"
 
       - name: 🔍 Scan with Grype
         shell: pwsh
