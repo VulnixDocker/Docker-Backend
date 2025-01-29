@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         run: |
           echo "🔹 Installing Trivy on Windows..."
-          Invoke-WebRequest -Uri "https://github.com/aquasecurity/trivy/releases/latest/download/trivy_Windows-64bit.zip" -OutFile "trivy.zip"
+          Invoke-WebRequest -Uri "https://github.com/aquasecurity/trivy/releases/download/v0.25.0/trivy_0.25.0_Windows-64bit.zip" -OutFile "trivy.zip"
           Expand-Archive -Path "trivy.zip" -DestinationPath "."
           echo "✅ Trivy Installed on Windows!"
 
