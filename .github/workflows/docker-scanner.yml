@@ -6,7 +6,6 @@ on:
       docker_image:
         description: "Docker image to scan"
         required: true
-        default: "vulnerables/web-dvwa"
 
 jobs:
   scan:
@@ -35,7 +34,7 @@ jobs:
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
           docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt
 
-      - name: 📤 Upload Scan Reports as Artifacts
+      - name: 📤 Upload Scan Reports
         uses: actions/upload-artifact@v3
         with:
           name: Scanner Reports
@@ -56,11 +55,6 @@ jobs:
           MYSQL_PASSWORD: Abhiram@1729
         ports:
           - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
 
     steps:
       - name: 🔥 Checkout Repository
@@ -71,30 +65,8 @@ jobs:
         with:
           name: Scanner Reports
 
-      - name: 🔍 Verify Scan Reports Exist
-        run: |
-          ls -lah
-          if [ ! -f "trivy-report.txt" ] || [ ! -f "grype-report.txt" ]; then
-            echo "❌ ERROR: Scan reports are missing!"
-            exit 1
-          else
-            echo "✅ Scan reports found!"
-          fi
-
       - name: Install MySQL Connector
         run: pip install mysql-connector-python
 
-      - name: 🗄 Wait for MySQL to Be Ready
-        run: |
-          for i in {1..30}; do
-            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SELECT 1" && break
-            echo "Waiting for MySQL..."
-            sleep 2
-          done
-
       - name: 🗄 Store Scan Data in MySQL
         run: python insert_scan_report.py
-      - name: 🔎 Verify Data in MySQL
-        run: |
-          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -D docker_management -e "SELECT * FROM scan_reports;"
-
