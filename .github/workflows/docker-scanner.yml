@@ -1,58 +1,46 @@
 name: Docker Scanner CI/CD
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      docker_image:
+        description: 'Docker image to scan'
+        required: true
+        default: 'vulnerables/web-dvwa'
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: 🔥 Checkout Repository
-        uses: actions/checkout@v3
-
-      - name: 🐳 Set Up Docker
-        uses: docker/setup-buildx-action@v2
-
-      - name: 🏗 Build Docker Image
-        run: docker build -t mydockeruser/docker-scanner .
-
-  test:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: 🔥 Checkout Repository
-        uses: actions/checkout@v3
-
-      - name: 📦 Install Dependencies
-        run: |
-          pip install pytest
-          pytest
-
   scan:
     runs-on: ubuntu-latest
-    needs: test
     steps:
-      - name: 🔍 Scan Docker Image with Trivy
-        run: |
-          docker pull vulnerables/web-dvwa
-          docker run --rm aquasec/trivy image --exit-code 1 vulnerables/web-dvwa
+      - name: 🔥 Checkout Repository
+        uses: actions/checkout@v3
 
-  deploy:
+      - name: 🔍 Scan with Trivy
+        run: |
+          docker pull ${{ github.event.inputs.docker_image }}
+          docker run --rm aquasec/trivy image --format json -o trivy-report.json ${{ github.event.inputs.docker_image }}
+
+      - name: 🔍 Scan with Grype
+        run: |
+          docker run --rm anchore/grype ${{ github.event.inputs.docker_image }} -o json > grype-report.json
+
+      - name: 📤 Upload Scan Reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: Scanner Reports
+          path: |
+            trivy-report.json
+            grype-report.json
+
+  store-in-db:
     runs-on: ubuntu-latest
     needs: scan
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v3
 
-      - name: 📤 Login to Docker Hub
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+      - name: Install MySQL Connector
+        run: pip install mysql-connector-python
 
-      - name: 📦 Push Image to Docker Hub
-        run: |
-          docker push mydockeruser/docker-scanner
+      - name: 🗄 Store Scan Data in MySQL
+        run: python insert_scan_report.py
