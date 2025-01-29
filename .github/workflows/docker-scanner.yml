@@ -1,0 +1,31 @@
+stages:
+  - build
+  - test
+  - scan
+  - deploy
+
+variables:
+  DOCKER_IMAGE: "vulnerables/web-dvwa"
+
+build:
+  stage: build
+  script:
+    - docker build -t mydockeruser/docker-scanner .
+
+test:
+  stage: test
+  script:
+    - pytest
+
+scan:
+  stage: scan
+  script:
+    - docker run --rm aquasec/trivy image --exit-code 1 $DOCKER_IMAGE
+
+deploy:
+  stage: deploy
+  only:
+    - main
+  script:
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin
+    - docker push mydockeruser/docker-scanner
