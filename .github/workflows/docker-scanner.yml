@@ -9,7 +9,11 @@ on:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v3
@@ -22,17 +26,23 @@ jobs:
           else
             echo "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
           fi
+        shell: bash
+
+      - name: 🐳 Set up Docker
+        uses: docker/setup-buildx-action@v2
 
       - name: 🔍 Scan with Trivy
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
           docker pull "$IMAGE_NAME"
           docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt
+        shell: bash
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
           docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt
+        shell: bash
 
       - name: 📤 Upload Scan Reports
         uses: actions/upload-artifact@v3
@@ -43,18 +53,27 @@ jobs:
             grype-report.txt
 
   store-in-db:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
     needs: scan
     services:
       mysql:
         image: mysql:latest
         env:
-          MYSQL_ROOT_PASSWORD: rootpassword
-          MYSQL_DATABASE: docker_management
-          MYSQL_USER: flask_user
-          MYSQL_PASSWORD: Abhiram@1729
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
         ports:
           - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=localhost --user=${{ secrets.MYSQL_USER }} --password=${{ secrets.MYSQL_PASSWORD }}"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
       - name: 🔥 Checkout Repository
@@ -66,7 +85,35 @@ jobs:
           name: Scanner Reports
 
       - name: Install MySQL Connector
-        run: pip install mysql-connector-python
+        run: |
+          python -m pip install --upgrade pip
+          pip install mysql-connector-python
+        shell: bash
+
+      - name: 🗄 Wait for MySQL to be Ready
+        run: |
+          for i in {1..30}; do
+            mysql -h 127.0.0.1 -u ${{ secrets.MYSQL_USER }} -p${{ secrets.MYSQL_PASSWORD }} -e "SELECT 1" && break
+            echo "⏳ Waiting for MySQL..."
+            sleep 5
+          done
+        shell: bash
+
+      - name: 🔍 Verify Scan Reports Exist
+        run: |
+          if [ ! -f "trivy-report.txt" ] || [ ! -f "grype-report.txt" ]; then
+            echo "❌ ERROR: Scan reports are missing!"
+            exit 1
+          else
+            echo "✅ Scan reports found!"
+          fi
+        shell: bash
 
       - name: 🗄 Store Scan Data in MySQL
         run: python insert_scan_report.py
+        shell: bash
+
+      - name: 🔎 Verify Data in MySQL
+        run: |
+          mysql -h 127.0.0.1 -u ${{ secrets.MYSQL_USER }} -p${{ secrets.MYSQL_PASSWORD }} -D ${{ secrets.MYSQL_DATABASE }} -e "SELECT * FROM scan_reports;"
+        shell: bash
