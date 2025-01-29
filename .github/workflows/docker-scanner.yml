@@ -9,7 +9,7 @@ on:
 
 jobs:
   scan:
-    runs-on: windows-latest  # ✅ Only Windows
+    runs-on: windows-latest  # ✅ Runs only on Windows
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v3
@@ -24,8 +24,11 @@ jobs:
             Write-Host "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
           }
 
-      - name: 🐳 Set up Docker
-        uses: docker/setup-buildx-action@v2
+      - name: 🐳 Set up Docker (Disable BuildKit)
+        shell: pwsh
+        run: |
+          Write-Host "🛠 Disabling BuildKit..."
+          [System.Environment]::SetEnvironmentVariable("DOCKER_BUILDKIT", "0", [System.EnvironmentVariableTarget]::Machine)
 
       - name: 🔍 Scan with Trivy
         shell: pwsh
