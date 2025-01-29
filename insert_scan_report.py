@@ -18,13 +18,13 @@ except Exception as e:
     print(f"❌ MySQL Connection Error: {e}")
     exit(1)
 
-# Ensure table exists
+# Ensure table exists with LONGTEXT for large reports
 create_table_sql = """
 CREATE TABLE IF NOT EXISTS scan_reports (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     scanner_name VARCHAR(255) NOT NULL,
-    report_text TEXT NOT NULL,
+    report_text LONGTEXT NOT NULL,
     scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -33,7 +33,7 @@ cursor.execute(create_table_sql)
 # Insert scan results
 def insert_report(scanner_name, file_path):
     try:
-        with open(file_path, "r") as file:
+        with open(file_path, "r", encoding="utf-8") as file:
             report_text = file.read()
 
         sql = """INSERT INTO scan_reports (user_id, scanner_name, report_text, scanned_at)
