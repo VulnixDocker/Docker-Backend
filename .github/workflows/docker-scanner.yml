@@ -1,16 +1,22 @@
-name: Docker Scanner CI/CD
-
-on:
-  workflow_dispatch:
-    inputs:
-      docker_image:
-        description: 'Docker image to scan'
-        required: true
-        default: 'vulnerables/web-dvwa'
-
 jobs:
   scan:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:latest
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: docker_management
+          MYSQL_USER: flask_user
+          MYSQL_PASSWORD: Abhiram@1729
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v3
@@ -35,12 +41,36 @@ jobs:
   store-in-db:
     runs-on: ubuntu-latest
     needs: scan
+    services:
+      mysql:
+        image: mysql:latest
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: docker_management
+          MYSQL_USER: flask_user
+          MYSQL_PASSWORD: Abhiram@1729
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v3
 
       - name: Install MySQL Connector
         run: pip install mysql-connector-python
+
+      - name: 🗄 Wait for MySQL to Be Ready
+        run: |
+          for i in {1..30}; do
+            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SELECT 1" && break
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
 
       - name: 🗄 Store Scan Data in MySQL
         run: python insert_scan_report.py
