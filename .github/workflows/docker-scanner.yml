@@ -6,55 +6,36 @@ on:
       docker_image:
         description: "Docker image to scan"
         required: true
+        default: "vulnerables/web-dvwa"
 
 jobs:
   scan:
-    runs-on: windows-latest  # ✅ Only Windows
+    runs-on: ubuntu-latest
+
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v3
 
       - name: 🛠 Verify Docker Image Input
-        shell: pwsh
         run: |
-          if ([string]::IsNullOrEmpty("${{ github.event.inputs.docker_image }}")) {
-            Write-Host "🚨 ERROR: No Docker image specified!"
+          if [[ -z "${{ github.event.inputs.docker_image }}" ]]; then
+            echo "🚨 ERROR: No Docker image specified!"
             exit 1
-          } else {
-            Write-Host "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
-          }
+          else
+            echo "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
+          fi
 
-      - name: 🐳 Set up Docker (Windows Compatible)
-        shell: pwsh
+      - name: 🔍 Scan with Trivy
         run: |
-          $env:DOCKER_BUILDKIT=0
-          Write-Host "🚀 BuildKit Disabled! Using default Docker builder."
-      
-      - name: 🛠 Install Trivy (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          echo "🔹 Installing Trivy on Windows..."
-          Invoke-WebRequest -Uri "https://github.com/aquasecurity/trivy/releases/download/v0.25.0/trivy_0.25.0_Windows-64bit.zip" -OutFile "trivy.zip"
-          Expand-Archive -Path "trivy.zip" -DestinationPath "."
-          echo "✅ Trivy Installed on Windows!"
-
-      - name: 🔍 Scan with Trivy (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $IMAGE_NAME = "${{ github.event.inputs.docker_image }}"
-          echo "🔹 Scanning image: $IMAGE_NAME"
-          ./trivy.exe image $IMAGE_NAME | Out-File -FilePath trivy-report.txt
-          echo "✅ Trivy Scan Completed!"
+          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt
 
       - name: 🔍 Scan with Grype
-        shell: pwsh
         run: |
-          $IMAGE_NAME = "${{ github.event.inputs.docker_image }}"
-          docker run --rm anchore/grype $IMAGE_NAME | Out-File -FilePath grype-report.txt
+          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt
 
-      - name: 📤 Upload Scan Reports
+      - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v3
         with:
           name: Scanner Reports
@@ -63,7 +44,7 @@ jobs:
             grype-report.txt
 
   store-in-db:
-    runs-on: windows-latest  # ✅ Only Windows
+    runs-on: ubuntu-latest
     needs: scan
 
     services:
@@ -76,7 +57,11 @@ jobs:
           MYSQL_PASSWORD: Abhiram@1729
         ports:
           - 3306:3306
-        options: --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
+        options: >-
+          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
       - name: 🔥 Checkout Repository
@@ -87,44 +72,26 @@ jobs:
         with:
           name: Scanner Reports
 
-      - name: Install MySQL Connector
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          pip install mysql-connector-python
-
-      - name: 🛠 Set Environment Variables
-        shell: pwsh
-        run: |
-          echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: 🗄 Wait for MySQL to be Ready
-        shell: pwsh
-        run: |
-          for ($i=1; $i -le 30; $i++) {
-            mysql -h 127.0.0.1 -u $env:MYSQL_USER -p$env:MYSQL_PASSWORD -e "SELECT 1" && break
-            Write-Host "⏳ Waiting for MySQL..."
-            Start-Sleep -Seconds 5
-          }
-
       - name: 🔍 Verify Scan Reports Exist
-        shell: pwsh
         run: |
-          if (!(Test-Path "trivy-report.txt") -or !(Test-Path "grype-report.txt")) {
-            Write-Host "❌ ERROR: Scan reports are missing!"
+          ls -lah
+          if [ ! -f "trivy-report.txt" ] || [ ! -f "grype-report.txt" ]; then
+            echo "❌ ERROR: Scan reports are missing!"
             exit 1
-          } else {
-            Write-Host "✅ Scan reports found!"
-          }
+          else
+            echo "✅ Scan reports found!"
+          fi
+
+      - name: 🛠 Install MySQL Connector
+        run: pip install mysql-connector-python
+
+      - name: 🗄 Wait for MySQL to Be Ready
+        run: |
+          for i in {1..30}; do
+            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SELECT 1" && break
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
 
       - name: 🗄 Store Scan Data in MySQL
-        shell: pwsh
         run: python insert_scan_report.py
-
-      - name: 🔎 Verify Data in MySQL
-        shell: pwsh
-        run: |
-          mysql -h 127.0.0.1 -u $env:MYSQL_USER -p$env:MYSQL_PASSWORD -D $env:MYSQL_DATABASE -e "SELECT * FROM scan_reports;"

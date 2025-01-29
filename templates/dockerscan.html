@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Docker Vulnerability Scanner</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
         body {
             background: linear-gradient(135deg, #007bff, #6c63ff);
@@ -14,13 +15,15 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            margin: 0;
+            padding: 0;
         }
 
         .container {
             max-width: 700px;
+            padding: 40px;
             background: #fff;
             border-radius: 15px;
-            padding: 40px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
 
@@ -29,21 +32,66 @@
             margin-bottom: 30px;
         }
 
-        .btn-primary {
-            width: 100%;
-            margin-bottom: 15px;
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #007bff;
         }
 
-        #scanResults {
-            display: none;
+        .header p {
+            font-size: 1rem;
+            color: #6c757d;
+        }
+
+        .form-label {
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .btn-primary {
+            background-color: #007bff;
+            border: none;
+            padding: 12px 20px;
+            font-size: 1rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: transform 0.2s ease, background-color 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            background-color: #0056b3;
+            transform: scale(1.05);
+        }
+
+        .form-select {
+            height: 50px;
+            font-size: 1rem;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 0.9rem;
+            color: #adb5bd;
+        }
+
+        .scan-status {
             margin-top: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-align: center;
             color: #333;
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            font-family: monospace;
-            max-height: 400px;
-            overflow-y: auto;
+            display: none;
+        }
+
+        .completed-message {
+            margin-top: 20px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-align: center;
+            color: #28a745;
+            display: none;
         }
     </style>
 </head>
@@ -54,70 +102,117 @@
             <p>Secure your containers with advanced scanning tools</p>
         </div>
 
-        <button id="startFullScan" class="btn btn-primary">Start Full Scan</button>
-
-        <label for="scanType" class="form-label">Select Scan Type:</label>
-        <select id="scanType" class="form-select">
-            <option value="" disabled selected>Select a scan type</option>
-            <option value="simple">Simple Scan</option>
-            <option value="detailed">Detailed Scan</option>
-        </select>
-        <button id="startSelectiveScan" class="btn btn-primary">Start Selective Scan</button>
-
-        <div id="scanResults">
-            <h4>Scan Results:</h4>
-            <pre id="results"></pre>
+        <!-- File Upload Section -->
+        <div class="upload-file mb-4">
+            <label for="dockerImage" class="form-label">Upload Docker Image File:</label>
+            <input type="file" id="dockerImage" name="dockerImage" class="form-control">
         </div>
+
+        <button id="uploadButton" class="btn btn-primary w-100 mb-3">Upload Image</button>
+
+        <!-- Full Scan Section -->
+        <button id="startFullScanButton" class="btn btn-primary w-100 mb-3" disabled>Start Full Scan</button>
+
+        <!-- Selective Scan Section -->
+        <div class="scan-section">
+            <label for="scanType" class="form-label">Run Selective Scan:</label>
+            <select id="scanType" name="scanType" class="form-select mb-3">
+                <option value="" disabled selected>Select a scan type</option>
+                <option value="simple">Simple Scan</option>
+                <option value="detailed">Detailed Scan</option>
+            </select>
+            <button id="startSelectiveScanButton" class="btn btn-primary w-100" disabled>Start Selective Scan</button>
+        </div>
+
+        <!-- Scanning Status -->
+        <div id="scanStatus" class="scan-status">Preparing to scan...</div>
+
+        <!-- Completion Message -->
+        <div id="completedMessage" class="completed-message">Scan is completed! Report will be available soon.</div>
     </div>
 
     <script>
-        document.getElementById('startFullScan').addEventListener('click', () => {
-            fetch('/start-full-scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ docker_image: "docker-project:latest" })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.result_file) {
-                    fetch(`/scan-results/${data.result_file}`)
-                        .then(response => response.text())
-                        .then(results => {
-                            document.getElementById('scanResults').style.display = 'block';
-                            document.getElementById('results').textContent = results;
-                        });
-                } else {
-                    alert(data.error || "Unknown error occurred.");
-                }
-            });
-        });
-
-        document.getElementById('startSelectiveScan').addEventListener('click', () => {
-            const scanType = document.getElementById('scanType').value;
-            if (!scanType) {
-                alert('Please select a scan type!');
+        let uploadedImage = null;
+    
+        $("#uploadButton").click(function () {
+            const fileInput = $("#dockerImage")[0].files[0];
+    
+            if (!fileInput) {
+                alert("Please select a Docker image file to upload.");
                 return;
             }
-
-            fetch('/start-selective-scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scan_type: scanType, docker_image: "docker-project:latest" })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.result_file) {
-                    fetch(`/scan-results/${data.result_file}`)
-                        .then(response => response.text())
-                        .then(results => {
-                            document.getElementById('scanResults').style.display = 'block';
-                            document.getElementById('results').textContent = results;
-                        });
-                } else {
-                    alert(data.error || "Unknown error occurred.");
+    
+            let formData = new FormData();
+            formData.append("docker_image", fileInput);
+    
+            $.ajax({
+                url: "/upload",
+                type: "POST",
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function (response) {
+                    uploadedImage = response.image_name;
+                    alert("Image uploaded successfully!");
+                    $("#startFullScanButton").prop("disabled", false);
+                },
+                error: function () {
+                    alert("Error uploading file.");
                 }
             });
         });
+    
+        function startScan() {
+            if (!uploadedImage) {
+                alert("Please upload an image before scanning.");
+                return;
+            }
+    
+            $("#scanStatus").show().text("Starting scan...");
+            $("#completedMessage").hide();
+    
+            $.ajax({
+                url: "/trigger_scan",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ image_name: uploadedImage }),
+                success: function () {
+                    simulateProgress();
+                },
+                error: function () {
+                    alert("Error triggering scan.");
+                }
+            });
+        }
+    
+        function simulateProgress(stepIndex = 0) {
+            const scanSteps = [
+                "Testing Docker misconfigurations...",
+                "Checking Docker CVE vulnerabilities...",
+                "Scanning for open ports...",
+                "Validating container runtime settings...",
+                "Analyzing image layers...",
+                "Checking for outdated dependencies...",
+                "Scanning for malware signatures...",
+                "Validating Dockerfile best practices...",
+                "Ensuring compliance with CIS benchmarks...",
+                "Performing final risk analysis..."
+            ];
+    
+            if (stepIndex < scanSteps.length) {
+                $("#scanStatus").text(scanSteps[stepIndex]);
+    
+                setTimeout(() => {
+                    simulateProgress(stepIndex + 1);
+                }, 2000);
+            } else {
+                $("#scanStatus").hide();
+                $("#completedMessage").show();
+            }
+        }
+    
+        $("#startFullScanButton").click(() => startScan());
     </script>
+    
 </body>
 </html>
