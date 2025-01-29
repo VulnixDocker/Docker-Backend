@@ -19,7 +19,6 @@ jobs:
         uses: actions/checkout@v3
 
       - name: 🛠 Verify Docker Image Input
-        shell: bash
         run: |
           if [[ -z "${{ github.event.inputs.docker_image }}" ]]; then
             echo "🚨 ERROR: No Docker image specified!"
@@ -27,39 +26,23 @@ jobs:
           else
             echo "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
           fi
+        shell: bash
 
       - name: 🐳 Set up Docker
         uses: docker/setup-buildx-action@v2
 
-      - name: 🔍 Scan with Trivy (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
+      - name: 🔍 Scan with Trivy
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
           docker pull "$IMAGE_NAME"
           docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt
-
-      - name: 🔍 Scan with Trivy (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $IMAGE_NAME="${{ github.event.inputs.docker_image }}"
-          docker pull $IMAGE_NAME
-          docker run --rm aquasec/trivy image $IMAGE_NAME | Out-File -Encoding utf8 trivy-report.txt
-
-      - name: 🔍 Scan with Grype (Linux)
-        if: runner.os == 'Linux'
         shell: bash
+
+      - name: 🔍 Scan with Grype
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
           docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt
-
-      - name: 🔍 Scan with Grype (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $IMAGE_NAME="${{ github.event.inputs.docker_image }}"
-          docker run --rm anchore/grype $IMAGE_NAME | Out-File -Encoding utf8 grype-report.txt
+        shell: bash
 
       - name: 📤 Upload Scan Reports
         uses: actions/upload-artifact@v3
@@ -76,21 +59,18 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     needs: scan
+
     services:
       mysql:
         image: mysql:latest
         env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
-          MYSQL_USER: ${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: docker_management
+          MYSQL_USER: flask_user
+          MYSQL_PASSWORD: Abhiram@1729
         ports:
           - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --host=localhost --user=${{ secrets.MYSQL_USER }} --password=${{ secrets.MYSQL_PASSWORD }}"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+        options: --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
 
     steps:
       - name: 🔥 Checkout Repository
@@ -101,47 +81,30 @@ jobs:
         with:
           name: Scanner Reports
 
-      - name: Install MySQL Connector (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          python3 -m pip install --upgrade pip
-          pip3 install mysql-connector-python
-
-      - name: Install MySQL Connector (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Install MySQL Connector
         run: |
           python -m pip install --upgrade pip
           pip install mysql-connector-python
-
-      - name: 🗄 Wait for MySQL to be Ready (Linux)
-        if: runner.os == 'Linux'
         shell: bash
+
+      - name: 🛠 Set Environment Variables
+        run: |
+          echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> $GITHUB_ENV
+          echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> $GITHUB_ENV
+          echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" >> $GITHUB_ENV
+          echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: 🗄 Wait for MySQL to be Ready
         run: |
           for i in {1..30}; do
-            mysql -h 127.0.0.1 -u ${{ secrets.MYSQL_USER }} -p${{ secrets.MYSQL_PASSWORD }} -e "SELECT 1" && break
+            mysql -h 127.0.0.1 -u $MYSQL_USER -p$MYSQL_PASSWORD -e "SELECT 1" && break
             echo "⏳ Waiting for MySQL..."
             sleep 5
           done
-
-      - name: 🗄 Wait for MySQL to be Ready (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          for ($i=0; $i -lt 30; $i++) {
-            try {
-              mysql -h 127.0.0.1 -u ${{ secrets.MYSQL_USER }} -p${{ secrets.MYSQL_PASSWORD }} -e "SELECT 1"
-              break
-            } catch {
-              Write-Host "⏳ Waiting for MySQL..."
-              Start-Sleep -Seconds 5
-            }
-          }
-
-      - name: 🔍 Verify Scan Reports Exist (Linux)
-        if: runner.os == 'Linux'
         shell: bash
+
+      - name: 🔍 Verify Scan Reports Exist
         run: |
           if [ ! -f "trivy-report.txt" ] || [ ! -f "grype-report.txt" ]; then
             echo "❌ ERROR: Scan reports are missing!"
@@ -149,36 +112,13 @@ jobs:
           else
             echo "✅ Scan reports found!"
           fi
-
-      - name: 🔍 Verify Scan Reports Exist (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (!(Test-Path "trivy-report.txt") -or !(Test-Path "grype-report.txt")) {
-            Write-Host "❌ ERROR: Scan reports are missing!"
-            exit 1
-          } else {
-            Write-Host "✅ Scan reports found!"
-          }
-
-      - name: 🗄 Store Scan Data in MySQL (Linux)
-        if: runner.os == 'Linux'
         shell: bash
-        run: python3 insert_scan_report.py
 
-      - name: 🗄 Store Scan Data in MySQL (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: 🗄 Store Scan Data in MySQL
         run: python insert_scan_report.py
-
-      - name: 🔎 Verify Data in MySQL (Linux)
-        if: runner.os == 'Linux'
         shell: bash
-        run: |
-          mysql -h 127.0.0.1 -u ${{ secrets.MYSQL_USER }} -p${{ secrets.MYSQL_PASSWORD }} -D ${{ secrets.MYSQL_DATABASE }} -e "SELECT * FROM scan_reports;"
 
-      - name: 🔎 Verify Data in MySQL (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: 🔎 Verify Data in MySQL
         run: |
-          mysql -h 127.0.0.1 -u ${{ secrets.MYSQL_USER }} -p${{ secrets.MYSQL_PASSWORD }} -D ${{ secrets.MYSQL_DATABASE }} -e "SELECT * FROM scan_reports;"
+          mysql -h 127.0.0.1 -u $MYSQL_USER -p$MYSQL_PASSWORD -D $MYSQL_DATABASE -e "SELECT * FROM scan_reports;"
+        shell: bash
