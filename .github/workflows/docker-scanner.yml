@@ -1,38 +1,97 @@
-import json
-import mysql.connector
-import time
+name: Docker Scanner CI/CD  # ✅ Ensure the first line starts with `name:`
 
-# Wait for MySQL to be ready
-time.sleep(10)
+on:
+  workflow_dispatch:
+    inputs:
+      docker_image:
+        description: "Docker image to scan"
+        required: true
+        default: "vulnerables/web-dvwa"
 
-# Connect to MySQL inside GitHub Actions
-db = mysql.connector.connect(
-    host="127.0.0.1",
-    user="flask_user",
-    password="Abhiram@1729",
-    database="docker_management"
-)
-cursor = db.cursor()
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:latest
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: docker_management
+          MYSQL_USER: flask_user
+          MYSQL_PASSWORD: Abhiram@1729
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
-# Insert scan results
-def insert_report(scanner_name, file_path):
-    try:
-        with open(file_path, "r") as file:
-            report_json = json.load(file)
+    steps:
+      - name: 🔥 Checkout Repository
+        uses: actions/checkout@v3
 
-        sql = """INSERT INTO scan_reports (user_id, scanner_name, report_json)
-                 VALUES (%s, %s, %s)"""
-        values = (1, scanner_name, json.dumps(report_json))
+      - name: 🛠 Verify Docker Image Input
+        run: |
+          if [[ -z "${{ github.event.inputs.docker_image }}" ]]; then
+            echo "🚨 ERROR: No Docker image specified!"
+            exit 1
+          else
+            echo "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
+          fi
 
-        cursor.execute(sql, values)
-        db.commit()
-        print(f"✅ {scanner_name} report stored successfully")
+      - name: 🔍 Scan with Trivy
+        run: |
+          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          docker pull "$IMAGE_NAME"
+          docker run --rm aquasec/trivy image --format json -o trivy-report.json "$IMAGE_NAME"
 
-    except Exception as e:
-        print(f"❌ Error storing {scanner_name} report: {e}")
+      - name: 🔍 Scan with Grype
+        run: |
+          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          docker run --rm anchore/grype "$IMAGE_NAME" -o json > grype-report.json
 
-insert_report("Trivy", "trivy-report.json")
-insert_report("Grype", "grype-report.json")
+      - name: 📤 Upload Scan Reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: Scanner Reports
+          path: |
+            trivy-report.json
+            grype-report.json
 
-cursor.close()
-db.close()
+  store-in-db:
+    runs-on: ubuntu-latest
+    needs: scan
+    services:
+      mysql:
+        image: mysql:latest
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: docker_management
+          MYSQL_USER: flask_user
+          MYSQL_PASSWORD: Abhiram@1729
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: 🔥 Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install MySQL Connector
+        run: pip install mysql-connector-python
+
+      - name: 🗄 Wait for MySQL to Be Ready
+        run: |
+          for i in {1..30}; do
+            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SELECT 1" && break
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+
+      - name: 🗄 Store Scan Data in MySQL
+        run: python insert_scan_report.py
