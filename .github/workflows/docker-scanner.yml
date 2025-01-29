@@ -94,3 +94,7 @@ jobs:
 
       - name: 🗄 Store Scan Data in MySQL
         run: python insert_scan_report.py
+      - name: 🔎 Verify Data in MySQL
+        run: |
+          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -D docker_management -e "SELECT * FROM scan_reports;"
+
