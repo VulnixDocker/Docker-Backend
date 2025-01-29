@@ -28,20 +28,20 @@ jobs:
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
           docker pull "$IMAGE_NAME"
-          docker run --rm aquasec/trivy image --format json -o trivy-report.json "$IMAGE_NAME"
+          docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
-          docker run --rm anchore/grype "$IMAGE_NAME" -o json > grype-report.json
+          docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt
 
       - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v3
         with:
           name: Scanner Reports
           path: |
-            trivy-report.json
-            grype-report.json
+            trivy-report.txt
+            grype-report.txt
 
   store-in-db:
     runs-on: ubuntu-latest
@@ -70,6 +70,16 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: Scanner Reports
+
+      - name: 🔍 Verify Scan Reports Exist
+        run: |
+          ls -lah
+          if [ ! -f "trivy-report.txt" ] || [ ! -f "grype-report.txt" ]; then
+            echo "❌ ERROR: Scan reports are missing!"
+            exit 1
+          else
+            echo "✅ Scan reports found!"
+          fi
 
       - name: Install MySQL Connector
         run: pip install mysql-connector-python
