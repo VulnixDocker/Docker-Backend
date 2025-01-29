@@ -9,40 +9,36 @@ on:
 
 jobs:
   scan:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-
+    runs-on: windows-latest  # ✅ Only Windows
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v3
 
       - name: 🛠 Verify Docker Image Input
+        shell: pwsh
         run: |
-          if [[ -z "${{ github.event.inputs.docker_image }}" ]]; then
-            echo "🚨 ERROR: No Docker image specified!"
+          if ([string]::IsNullOrEmpty("${{ github.event.inputs.docker_image }}")) {
+            Write-Host "🚨 ERROR: No Docker image specified!"
             exit 1
-          else
-            echo "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
-          fi
-        shell: bash
+          } else {
+            Write-Host "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
+          }
 
       - name: 🐳 Set up Docker
         uses: docker/setup-buildx-action@v2
 
       - name: 🔍 Scan with Trivy
+        shell: pwsh
         run: |
-          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
-          docker pull "$IMAGE_NAME"
-          docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt
-        shell: bash
+          $IMAGE_NAME = "${{ github.event.inputs.docker_image }}"
+          docker pull $IMAGE_NAME
+          docker run --rm aquasec/trivy image $IMAGE_NAME | Out-File -FilePath trivy-report.txt
 
       - name: 🔍 Scan with Grype
+        shell: pwsh
         run: |
-          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
-          docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt
-        shell: bash
+          $IMAGE_NAME = "${{ github.event.inputs.docker_image }}"
+          docker run --rm anchore/grype $IMAGE_NAME | Out-File -FilePath grype-report.txt
 
       - name: 📤 Upload Scan Reports
         uses: actions/upload-artifact@v3
@@ -53,11 +49,7 @@ jobs:
             grype-report.txt
 
   store-in-db:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-
+    runs-on: windows-latest  # ✅ Only Windows
     needs: scan
 
     services:
@@ -82,43 +74,43 @@ jobs:
           name: Scanner Reports
 
       - name: Install MySQL Connector
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install mysql-connector-python
-        shell: bash
 
       - name: 🛠 Set Environment Variables
+        shell: pwsh
         run: |
-          echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> $GITHUB_ENV
-          echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> $GITHUB_ENV
-          echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" >> $GITHUB_ENV
-          echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" >> $GITHUB_ENV
-        shell: bash
+          echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: 🗄 Wait for MySQL to be Ready
+        shell: pwsh
         run: |
-          for i in {1..30}; do
-            mysql -h 127.0.0.1 -u $MYSQL_USER -p$MYSQL_PASSWORD -e "SELECT 1" && break
-            echo "⏳ Waiting for MySQL..."
-            sleep 5
-          done
-        shell: bash
+          for ($i=1; $i -le 30; $i++) {
+            mysql -h 127.0.0.1 -u $env:MYSQL_USER -p$env:MYSQL_PASSWORD -e "SELECT 1" && break
+            Write-Host "⏳ Waiting for MySQL..."
+            Start-Sleep -Seconds 5
+          }
 
       - name: 🔍 Verify Scan Reports Exist
+        shell: pwsh
         run: |
-          if [ ! -f "trivy-report.txt" ] || [ ! -f "grype-report.txt" ]; then
-            echo "❌ ERROR: Scan reports are missing!"
+          if (!(Test-Path "trivy-report.txt") -or !(Test-Path "grype-report.txt")) {
+            Write-Host "❌ ERROR: Scan reports are missing!"
             exit 1
-          else
-            echo "✅ Scan reports found!"
-          fi
-        shell: bash
+          } else {
+            Write-Host "✅ Scan reports found!"
+          }
 
       - name: 🗄 Store Scan Data in MySQL
+        shell: pwsh
         run: python insert_scan_report.py
-        shell: bash
 
       - name: 🔎 Verify Data in MySQL
+        shell: pwsh
         run: |
-          mysql -h 127.0.0.1 -u $MYSQL_USER -p$MYSQL_PASSWORD -D $MYSQL_DATABASE -e "SELECT * FROM scan_reports;"
-        shell: bash
+          mysql -h 127.0.0.1 -u $env:MYSQL_USER -p$env:MYSQL_PASSWORD -D $env:MYSQL_DATABASE -e "SELECT * FROM scan_reports;"
