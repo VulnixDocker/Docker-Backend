@@ -1,34 +1,25 @@
 import mysql.connector
-import time
+import os
 
-# Wait for MySQL to be ready
-time.sleep(10)
+# Fetch credentials from environment variables
+MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
+MYSQL_USER = os.getenv("MYSQL_USER", "flask_user")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "Abhiram@1729")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "docker_management")
 
-# Connect to MySQL inside GitHub Actions
+# Connect to MySQL
 try:
     db = mysql.connector.connect(
-        host="127.0.0.1",
-        user="flask_user",
-        password="Abhiram@1729",
-        database="docker_management"
+        host=MYSQL_HOST,
+        user=MYSQL_USER,
+        password=MYSQL_PASSWORD,
+        database=MYSQL_DATABASE
     )
     cursor = db.cursor()
-    print("✅ Successfully connected to MySQL!")
+    print("✅ Connected to MySQL!")
 except Exception as e:
     print(f"❌ MySQL Connection Error: {e}")
     exit(1)
-
-# Ensure table exists with LONGTEXT for large reports
-create_table_sql = """
-CREATE TABLE IF NOT EXISTS scan_reports (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    scanner_name VARCHAR(255) NOT NULL,
-    report_text LONGTEXT NOT NULL,
-    scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
-cursor.execute(create_table_sql)
 
 # Insert scan results
 def insert_report(scanner_name, file_path):
