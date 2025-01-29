@@ -30,19 +30,22 @@ jobs:
           $env:DOCKER_BUILDKIT=0
           Write-Host "🚀 BuildKit Disabled! Using default Docker builder."
       
-      - name: 🛠 Install Trivy (Using Docker)
-        shell: bash
+      - name: 🛠 Install Trivy (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          echo "🔹 Pulling Trivy Docker image..."
-          docker pull aquasec/trivy
-          echo "✅ Trivy Installed Successfully!"
+          echo "🔹 Installing Trivy on Windows..."
+          Invoke-WebRequest -Uri "https://github.com/aquasecurity/trivy/releases/latest/download/trivy_Windows-64bit.zip" -OutFile "trivy.zip"
+          Expand-Archive -Path "trivy.zip" -DestinationPath "."
+          echo "✅ Trivy Installed on Windows!"
 
-      - name: 🔍 Scan with Trivy (Using Docker)
-        shell: bash
+      - name: 🔍 Scan with Trivy (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          $IMAGE_NAME = "${{ github.event.inputs.docker_image }}"
           echo "🔹 Scanning image: $IMAGE_NAME"
-          docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt
+          ./trivy.exe image $IMAGE_NAME | Out-File -FilePath trivy-report.txt
           echo "✅ Trivy Scan Completed!"
 
       - name: 🔍 Scan with Grype
