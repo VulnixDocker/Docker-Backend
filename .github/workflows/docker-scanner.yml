@@ -9,7 +9,7 @@ on:
 
 jobs:
   scan:
-    runs-on: windows-latest  # ✅ Runs only on Windows
+    runs-on: windows-latest  # ✅ Only Windows
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v3
@@ -24,18 +24,19 @@ jobs:
             Write-Host "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
           }
 
-      - name: 🐳 Set up Docker (Disable BuildKit)
-        shell: pwsh
-        run: |
-          Write-Host "🛠 Disabling BuildKit..."
-          [System.Environment]::SetEnvironmentVariable("DOCKER_BUILDKIT", "0", [System.EnvironmentVariableTarget]::Machine)
+      - name: 🐳 Set up Docker
+        uses: docker/setup-buildx-action@v2
 
-      - name: 🔍 Scan with Trivy
+      - name: 🔍 Scan with Trivy (Without Pulling)
         shell: pwsh
         run: |
           $IMAGE_NAME = "${{ github.event.inputs.docker_image }}"
-          docker pull $IMAGE_NAME
-          docker run --rm aquasec/trivy image $IMAGE_NAME | Out-File -FilePath trivy-report.txt
+          if (-not $IMAGE_NAME) {
+            Write-Host "🚨 ERROR: No Docker image specified!"
+            exit 1
+          }
+          & "C:\Users\abhir\Downloads\trivy_tool\trivy.exe" image --no-progress $IMAGE_NAME | Out-File -FilePath trivy-report.txt
+
 
       - name: 🔍 Scan with Grype
         shell: pwsh
