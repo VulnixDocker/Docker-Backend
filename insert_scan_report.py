@@ -8,7 +8,7 @@ MYSQL_USER = os.getenv("MYSQL_USER", "flask_user")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "Abhiram@1729")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "docker_management")
 
-# ✅ Establish Connection to MySQL
+# ✅ Connect to MySQL
 try:
     db = mysql.connector.connect(
         host=MYSQL_HOST,
@@ -58,11 +58,8 @@ def insert_report(scanner_name, file_pattern):
         except Exception as e:
             print(f"❌ Error storing {scanner_name} report from {file_path}: {e}")
 
-# ✅ Check if at least one report exists before proceeding
-trivy_reports = glob.glob("scan_reports/trivy-*.txt")
-grype_reports = glob.glob("scan_reports/grype-*.txt")
-
-if not trivy_reports and not grype_reports:
+# ✅ Ensure at least one report exists before proceeding
+if not glob.glob("scan_reports/trivy-*.txt") and not glob.glob("scan_reports/grype-*.txt"):
     print("❌ ERROR: No scan reports found! Exiting without inserting data.")
     exit(1)
 
