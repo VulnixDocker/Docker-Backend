@@ -58,15 +58,15 @@ jobs:
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
           echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
 
-
       - name: 🔍 Ensure Scan Reports Exist
         run: |
-          if [ ! -f "trivy-*.txt" ] || [ ! -f "grype-*.txt" ]; then
+          if ls trivy-*.txt 1> /dev/null 2>&1 && ls grype-*.txt 1> /dev/null 2>&1; then
+            echo "✅ Scan reports found!"
+          else
             echo "❌ ERROR: Scan reports are missing!"
             exit 1
-          else
-            echo "✅ Scan reports found!"
           fi
+
 
 
 
