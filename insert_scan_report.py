@@ -46,11 +46,12 @@ def insert_report(scanner_name, file_pattern):
 
     for file_path in files:
         try:
-            print(f"🔹 Verifying {scanner_name} report: {file_path}")
-            os.system(f"cat {file_path}")  # 🔍 Print the report before inserting
-
+            # Read report
             with open(file_path, "r", encoding="utf-8") as file:
                 report_text = file.read()
+            
+            # Print report to verify content
+            print(f"🔹 {scanner_name} Report Content ({file_path}):\n{report_text[:500]}")  # Print first 500 characters
 
             file_name = os.path.basename(file_path)  # Extract file name
 
@@ -60,15 +61,16 @@ def insert_report(scanner_name, file_pattern):
 
             cursor.execute(sql, values)
             db.commit()
-            
-            # ✅ Print inserted row count
             print(f"✅ {scanner_name} report stored successfully from {file_path}")
+
+            # Print total rows after insertion
             cursor.execute("SELECT COUNT(*) FROM scan_reports;")
             count = cursor.fetchone()[0]
             print(f"🔹 Total rows in `scan_reports`: {count}")
 
         except Exception as e:
             print(f"❌ Error storing {scanner_name} report from {file_path}: {e}")
+
 
 # ✅ Ensure at least one report exists before proceeding
 if not glob.glob("trivy-*.txt") and not glob.glob("grype-*.txt"):
