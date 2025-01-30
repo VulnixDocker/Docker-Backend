@@ -6,7 +6,6 @@ on:
       docker_image:
         description: "Docker image to scan"
         required: true
-        default: "vulnerables/web-dvwa"
 
 jobs:
   scan:
@@ -14,7 +13,7 @@ jobs:
 
     steps:
       - name: 🔥 Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 🛠 Verify Docker Image Input
         run: |
@@ -27,8 +26,12 @@ jobs:
 
       - name: 🐳 Start Docker Daemon
         run: |
-          sudo systemctl start docker
-          sleep 5  # Wait for Docker to start
+          echo "🔹 Checking Docker status..."
+          if ! systemctl is-active --quiet docker; then
+            echo "🚀 Starting Docker..."
+            sudo systemctl start docker
+            sleep 5
+          fi
           docker info
 
       - name: 🔑 Authenticate with Docker Hub (If Required)
@@ -49,16 +52,20 @@ jobs:
           if ! docker image inspect "$IMAGE_NAME" > /dev/null 2>&1; then
             echo "🚨 ERROR: Docker image '$IMAGE_NAME' not found locally!"
             exit 1
+          else
+            echo "✅ Docker image '$IMAGE_NAME' found and ready for scanning."
           fi
 
       - name: 🔍 Scan with Trivy
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          echo "🔹 Running Trivy scan..."
           docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt || echo "⚠️ Trivy scan failed!"
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          echo "🔹 Running Grype scan..."
           docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt || echo "⚠️ Grype scan failed!"
 
       - name: 📤 Upload Scan Reports as Artifacts
@@ -91,7 +98,7 @@ jobs:
 
     steps:
       - name: 🔥 Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 📥 Download Scan Reports
         uses: actions/download-artifact@v4
