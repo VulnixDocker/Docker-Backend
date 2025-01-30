@@ -11,12 +11,12 @@ jobs:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🐳 Ensure Docker is Running
+      - name: 🐳 Ensure Docker Daemon is Running
         run: |
           echo "🔹 Checking Docker status..."
           sudo systemctl start docker
           sleep 5
-          docker info
+          docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
       - name: 🐳 Load Uploaded Docker Images (If Any)
         run: |
@@ -30,7 +30,11 @@ jobs:
       - name: 🐳 List All Docker Images
         id: find_images
         run: |
-          IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}")
+          IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v '<none>')
+          if [ -z "$IMAGES" ]; then
+            echo "🚨 ERROR: No Docker images found!"
+            exit 1
+          fi
           echo "✅ Found Docker images:"
           echo "$IMAGES"
           echo "IMAGES<<EOF" >> $GITHUB_ENV
@@ -42,8 +46,8 @@ jobs:
           echo "$IMAGES" | while read -r IMAGE; do
             if [ -n "$IMAGE" ]; then
               echo "🔹 Scanning image: $IMAGE"
-              docker run --rm aquasec/trivy image "$IMAGE" > "trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
-              docker run --rm anchore/grype "$IMAGE" > "grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
             fi
           done
 
