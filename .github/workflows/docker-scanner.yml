@@ -43,7 +43,7 @@ jobs:
 
       - name: 🔍 Scan All Images with Trivy & Grype
         run: |
-          mkdir -p scan_reports
+          mkdir -p scan_reports  # ✅ FIX: Ensure directory exists
           echo "$IMAGES" | while read -r IMAGE; do
             if [ -n "$IMAGE" ]; then
               echo "🔹 Scanning image: $IMAGE"
@@ -56,8 +56,8 @@ jobs:
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
-          if [ -z "$(ls -A scan_reports/)" ]; then
-            echo "🚨 ERROR: No scan reports were generated!"
+          if [ -z "$(ls -A scan_reports/ 2>/dev/null)" ]; then
+            echo "❌ ERROR: Scan reports are missing!"
             exit 1
           else
             echo "✅ Scan reports generated successfully."
@@ -100,7 +100,7 @@ jobs:
 
       - name: 🔍 Verify Scan Reports Exist
         run: |
-          if [ -z "$(ls -A scan_reports/)" ]; then
+          if [ ! -d "scan_reports" ] || [ -z "$(ls -A scan_reports/ 2>/dev/null)" ]; then
             echo "❌ ERROR: Scan reports are missing!"
             exit 1
           else
