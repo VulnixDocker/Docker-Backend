@@ -2,7 +2,7 @@ import mysql.connector
 import os
 import glob
 
-# Database Config
+# ✅ Database Config
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
 MYSQL_USER = os.getenv("MYSQL_USER", "flask_user")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "Abhiram@1729")
@@ -19,12 +19,13 @@ try:
     cursor = db.cursor()
     print("✅ Connected to MySQL!")
 
-    # ✅ Create Table If It Doesn't Exist
+    # ✅ Create Table If It Doesn't Exist (Storing Report as LONGBLOB)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS scan_reports (
             id INT AUTO_INCREMENT PRIMARY KEY,
             scanner_name VARCHAR(50),
-            report_text TEXT,
+            report_file LONGBLOB,  # Storing file as binary
+            file_name VARCHAR(255),
             scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
@@ -44,12 +45,12 @@ def insert_report(scanner_name, file_pattern):
 
     for file_path in files:
         try:
-            with open(file_path, "r", encoding="utf-8") as file:
-                report_text = file.read()
+            with open(file_path, "rb") as file:  # Read as binary (for BLOB storage)
+                report_data = file.read()
 
-            sql = """INSERT INTO scan_reports (scanner_name, report_text, scanned_at)
-                     VALUES (%s, %s, NOW())"""
-            values = (scanner_name, report_text)
+            sql = """INSERT INTO scan_reports (scanner_name, report_file, file_name, scanned_at)
+                     VALUES (%s, %s, %s, NOW())"""
+            values = (scanner_name, report_data, os.path.basename(file_path))
 
             cursor.execute(sql, values)
             db.commit()
@@ -63,7 +64,7 @@ if not glob.glob("trivy-*.txt") and not glob.glob("grype-*.txt"):
     print("❌ ERROR: No scan reports found! Exiting without inserting data.")
     exit(1)
 
-# ✅ Store Reports
+# ✅ Store Reports as BLOBs
 insert_report("Trivy", "trivy-*.txt")
 insert_report("Grype", "grype-*.txt")
 
