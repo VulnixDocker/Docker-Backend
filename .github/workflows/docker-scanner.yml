@@ -61,12 +61,13 @@ jobs:
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
-          if [ -z "$(ls -A sc/ 2>/dev/null)" ]; then
+          if [ ! -f "trivy-*.txt" ] || [ ! -f "grype-*.txt" ]; then
             echo "❌ ERROR: Scan reports are missing!"
             exit 1
           else
-            echo "✅ Scan reports generated successfully."
+            echo "✅ Scan reports found!"
           fi
+
 
 
       - name: 📤 Upload Scan Reports as Artifacts
