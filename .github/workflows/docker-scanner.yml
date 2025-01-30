@@ -37,9 +37,13 @@ jobs:
       - name: 🔄 Load Uploaded Image into Docker
         run: |
           IMAGE_FILE="uploaded_images/${{ github.event.inputs.docker_image }}"
+          if [[ ! "$IMAGE_FILE" == *.tar ]]; then
+            IMAGE_FILE="$IMAGE_FILE.tar"
+          fi
           echo "🔹 Checking for uploaded Docker image tar file: $IMAGE_FILE"
           if [ ! -f "$IMAGE_FILE" ]; then
             echo "🚨 ERROR: Docker image tar file not found!"
+            ls -lah uploaded_images/
             exit 1
           fi
           echo "✅ Docker image tar found! Loading into Docker..."
@@ -70,7 +74,6 @@ jobs:
           path: |
             trivy-report.txt
             grype-report.txt
-
   store-in-db:
     runs-on: ubuntu-latest
     needs: scan
