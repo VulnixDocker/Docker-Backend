@@ -25,6 +25,12 @@ jobs:
             echo "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
           fi
 
+      - name: 🐳 Pull Required Scanner Images
+        run: |
+          echo "🔹 Pulling Trivy & Grype Docker images..."
+          docker pull aquasec/trivy
+          docker pull anchore/grype
+
       - name: 🔍 Scan with Trivy
         run: |
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
@@ -36,7 +42,7 @@ jobs:
           docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt
 
       - name: 📤 Upload Scan Reports as Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # Upgraded to v4
         with:
           name: Scanner Reports
           path: |
@@ -68,7 +74,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: 📥 Download Scan Reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4  # Upgraded to v4
         with:
           name: Scanner Reports
 
@@ -83,13 +89,18 @@ jobs:
           fi
 
       - name: 🛠 Install MySQL Connector
-        run: pip install mysql-connector-python
+        run: |
+          python -m pip install --upgrade pip
+          pip install mysql-connector-python
 
       - name: 🗄 Wait for MySQL to Be Ready
         run: |
           for i in {1..30}; do
-            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SELECT 1" && break
-            echo "Waiting for MySQL..."
+            if mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SELECT 1"; then
+              echo "✅ MySQL is ready!"
+              break
+            fi
+            echo "⏳ Waiting for MySQL..."
             sleep 2
           done
 
