@@ -19,6 +19,19 @@ try:
     cursor = db.cursor()
     print("✅ Connected to MySQL!")
 
+    # ✅ Ensure Table Exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scan_reports (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            scanner_name VARCHAR(255) NOT NULL,
+            file_name VARCHAR(255) NOT NULL,
+            report_text LONGTEXT NOT NULL,
+            scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    db.commit()
+
 except Exception as e:
     print(f"❌ MySQL Connection Error: {e}")
     exit(1)
