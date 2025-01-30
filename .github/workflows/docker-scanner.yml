@@ -110,19 +110,20 @@ jobs:
 
       - name: 🔍 Verify Scan Reports Exist
         run: |
-          echo "🔹 Checking for scan reports..."
-          ls -lah scan_reports/ || echo "⚠️ WARNING: scan_reports directory is missing!"
+          echo "🔹 Checking for scan reports in current directory..."
           
-          # Check if Trivy and Grype reports exist
-          TRIVY_REPORT=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
-          GRYPE_REPORT=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
+          # Check if Trivy and Grype reports exist in the current directory
+          TRIVY_REPORT=$(ls trivy-*.txt 2>/dev/null || echo "")
+          GRYPE_REPORT=$(ls grype-*.txt 2>/dev/null || echo "")
 
           if [ -z "$TRIVY_REPORT" ] && [ -z "$GRYPE_REPORT" ]; then
             echo "❌ ERROR: No scan reports found!"
             exit 1
           else
-            echo "✅ Scan reports found! Proceeding with database insertion..."
+            echo "✅ Scan reports found: $TRIVY_REPORT $GRYPE_REPORT"
+            echo "Proceeding with database insertion..."
           fi
+
 
 
       - name: 🛠 Install MySQL Connector
