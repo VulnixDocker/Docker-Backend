@@ -46,8 +46,8 @@ def insert_report(scanner_name, file_path):
     except Exception as e:
         print(f"❌ Error storing {scanner_name} report: {e}")
 
-insert_report("Trivy", "trivy-report.txt")
-insert_report("Grype", "grype-report.txt")
+insert_report("Trivy", "trivy-*.txt")
+insert_report("Grype", "grype-*.txt")
 
 cursor.close()
 db.close()
