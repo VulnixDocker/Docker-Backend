@@ -1,7 +1,7 @@
 name: Docker Scanner CI/CD
 
 on:
-  workflow_dispatch
+  workflow_dispatch:
 
 jobs:
   scan:
@@ -18,26 +18,16 @@ jobs:
           sleep 5
           docker info
 
-      - name: 🐳 Find and Load Uploaded Docker Image
-        id: load_image
+      - name: 🐳 Find the Latest Docker Image
+        id: find_image
         run: |
-          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1 || echo "")
-          if [ -z "$UPLOADED_FILE" ]; then
-            echo "🚨 ERROR: No Docker image tar file found!"
+          LATEST_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+          if [ -z "$LATEST_IMAGE" ]; then
+            echo "🚨 ERROR: No Docker images found!"
             exit 1
           fi
-          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
-          docker load -i "$UPLOADED_FILE"
-
-          # Extract the loaded image name
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
-          if [ -z "$IMAGE_NAME" ]; then
-            echo "🚨 ERROR: Could not determine image name after loading!"
-            exit 1
-          fi
-
-          echo "✅ Extracted image name: $IMAGE_NAME"
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          echo "✅ Latest Docker image found: $LATEST_IMAGE"
+          echo "IMAGE_NAME=$LATEST_IMAGE" >> $GITHUB_ENV
 
       - name: 🔍 Scan with Trivy
         run: |
