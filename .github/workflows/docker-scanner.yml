@@ -34,38 +34,33 @@ jobs:
           fi
           docker info
 
-      - name: 🔑 Authenticate with Docker Hub (If Required)
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      - name: 🔄 Load Uploaded Image into Docker
         run: |
-          if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
-            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-            echo "✅ Successfully authenticated with Docker Hub!"
-          else
-            echo "⚠️ Skipping authentication, no credentials provided."
-          fi
-
-      - name: 🐳 Check if Image Exists
-        run: |
-          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
-          if ! docker image inspect "$IMAGE_NAME" > /dev/null 2>&1; then
-            echo "🚨 ERROR: Docker image '$IMAGE_NAME' not found locally!"
+          IMAGE_FILE="uploaded_images/${{ github.event.inputs.docker_image }}"
+          echo "🔹 Checking for uploaded Docker image tar file: $IMAGE_FILE"
+          if [ ! -f "$IMAGE_FILE" ]; then
+            echo "🚨 ERROR: Docker image tar file not found!"
             exit 1
-          else
-            echo "✅ Docker image '$IMAGE_NAME' found and ready for scanning."
           fi
+          echo "✅ Docker image tar found! Loading into Docker..."
+          docker load -i "$IMAGE_FILE"
+          echo "✅ Image successfully loaded."
+
+      - name: 🔍 Extract Image Name
+        id: extract_image
+        run: |
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+          echo "🔹 Extracted image name: $IMAGE_NAME"
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
       - name: 🔍 Scan with Trivy
         run: |
-          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
-          echo "🔹 Running Trivy scan..."
+          echo "🔹 Running Trivy scan on $IMAGE_NAME..."
           docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt || echo "⚠️ Trivy scan failed!"
 
       - name: 🔍 Scan with Grype
         run: |
-          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
-          echo "🔹 Running Grype scan..."
+          echo "🔹 Running Grype scan on $IMAGE_NAME..."
           docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt || echo "⚠️ Grype scan failed!"
 
       - name: 📤 Upload Scan Reports as Artifacts
