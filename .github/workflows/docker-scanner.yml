@@ -18,9 +18,16 @@ jobs:
           sleep 5
           docker info
 
+      - name: 🐳 Load Uploaded Docker Images (If Any)
+        run: |
+          for FILE in uploaded_images/*.tar; do
+            if [ -f "$FILE" ]; then
+              echo "✅ Found uploaded Docker image: $FILE"
+              docker load -i "$FILE"
+            fi
+          done
 
-
-      - name: 🐳 Find All Docker Images
+      - name: 🐳 List All Docker Images
         id: find_images
         run: |
           IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}")
@@ -47,6 +54,7 @@ jobs:
           path: |
             trivy-*.txt
             grype-*.txt
+
 
   store-in-db:
     runs-on: ubuntu-latest
