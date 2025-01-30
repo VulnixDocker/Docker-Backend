@@ -1,11 +1,14 @@
 import mysql.connector
 import os
+import glob
 
+# Database Config
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
 MYSQL_USER = os.getenv("MYSQL_USER", "flask_user")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "Abhiram@1729")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "docker_management")
 
+# ✅ Establish Connection to MySQL
 try:
     db = mysql.connector.connect(
         host=MYSQL_HOST,
@@ -16,6 +19,7 @@ try:
     cursor = db.cursor()
     print("✅ Connected to MySQL!")
 
+    # ✅ Create Table If It Doesn't Exist
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS scan_reports (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -30,24 +34,42 @@ except Exception as e:
     print(f"❌ MySQL Connection Error: {e}")
     exit(1)
 
-def insert_report(scanner_name, file_path):
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            report_text = file.read()
+# ✅ Function to Store Reports in MySQL
+def insert_report(scanner_name, file_pattern):
+    files = glob.glob(file_pattern)
 
-        sql = """INSERT INTO scan_reports (scanner_name, report_text, scanned_at)
-                 VALUES (%s, %s, NOW())"""
-        values = (scanner_name, report_text)
+    if not files:
+        print(f"⚠️ WARNING: No reports found for {scanner_name}. Skipping...")
+        return
 
-        cursor.execute(sql, values)
-        db.commit()
-        print(f"✅ {scanner_name} report stored successfully")
+    for file_path in files:
+        try:
+            with open(file_path, "r", encoding="utf-8") as file:
+                report_text = file.read()
 
-    except Exception as e:
-        print(f"❌ Error storing {scanner_name} report: {e}")
+            sql = """INSERT INTO scan_reports (scanner_name, report_text, scanned_at)
+                     VALUES (%s, %s, NOW())"""
+            values = (scanner_name, report_text)
 
-insert_report("Trivy", "trivy-*.txt")
-insert_report("Grype", "grype-*.txt")
+            cursor.execute(sql, values)
+            db.commit()
+            print(f"✅ {scanner_name} report stored successfully from {file_path}")
 
+        except Exception as e:
+            print(f"❌ Error storing {scanner_name} report from {file_path}: {e}")
+
+# ✅ Check if at least one report exists before proceeding
+trivy_reports = glob.glob("scan_reports/trivy-*.txt")
+grype_reports = glob.glob("scan_reports/grype-*.txt")
+
+if not trivy_reports and not grype_reports:
+    print("❌ ERROR: No scan reports found! Exiting without inserting data.")
+    exit(1)
+
+# ✅ Store Reports
+insert_report("Trivy", "scan_reports/trivy-*.txt")
+insert_report("Grype", "scan_reports/grype-*.txt")
+
+# ✅ Close Database Connection
 cursor.close()
 db.close()
