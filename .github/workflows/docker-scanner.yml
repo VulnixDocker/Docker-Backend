@@ -48,14 +48,14 @@ jobs:
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Trivy scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
           echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Grype scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
           echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
 
 
@@ -72,7 +72,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
-          path: scan_reports/
+          path: |
+            trivy-*.txt
+            grype-*.txt
 
 
   store-in-db:

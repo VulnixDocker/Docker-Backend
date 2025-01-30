@@ -59,13 +59,13 @@ def insert_report(scanner_name, file_pattern):
             print(f"❌ Error storing {scanner_name} report from {file_path}: {e}")
 
 # ✅ Ensure at least one report exists before proceeding
-if not glob.glob("scan_reports/trivy-*.txt") and not glob.glob("scan_reports/grype-*.txt"):
+if not glob.glob("trivy-*.txt") and not glob.glob("grype-*.txt"):
     print("❌ ERROR: No scan reports found! Exiting without inserting data.")
     exit(1)
 
 # ✅ Store Reports
-insert_report("Trivy", "scan_reports/trivy-*.txt")
-insert_report("Grype", "scan_reports/grype-*.txt")
+insert_report("Trivy", "trivy-*.txt")
+insert_report("Grype", "grype-*.txt")
 
 # ✅ Close Database Connection
 cursor.close()
