@@ -57,7 +57,12 @@ def insert_report(scanner_name, file_pattern):
 
             cursor.execute(sql, values)
             db.commit()
+            
+            # ✅ Print inserted row count
             print(f"✅ {scanner_name} report stored successfully from {file_path}")
+            cursor.execute("SELECT COUNT(*) FROM scan_reports;")
+            count = cursor.fetchone()[0]
+            print(f"🔹 Total rows in `scan_reports`: {count}")
 
         except Exception as e:
             print(f"❌ Error storing {scanner_name} report from {file_path}: {e}")
