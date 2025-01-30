@@ -46,6 +46,9 @@ def insert_report(scanner_name, file_pattern):
 
     for file_path in files:
         try:
+            print(f"🔹 Verifying {scanner_name} report: {file_path}")
+            os.system(f"cat {file_path}")  # 🔍 Print the report before inserting
+
             with open(file_path, "r", encoding="utf-8") as file:
                 report_text = file.read()
 
@@ -75,6 +78,13 @@ if not glob.glob("trivy-*.txt") and not glob.glob("grype-*.txt"):
 # ✅ Store Reports
 insert_report("Trivy", "trivy-*.txt")
 insert_report("Grype", "grype-*.txt")
+
+# ✅ Print Final Table Contents
+print("🔹 Final Contents of `scan_reports` Table:")
+cursor.execute("SELECT id, scanner_name, file_name, scanned_at FROM scan_reports;")
+rows = cursor.fetchall()
+for row in rows:
+    print(row)
 
 # ✅ Close Database Connection
 cursor.close()
