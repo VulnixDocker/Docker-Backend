@@ -4,10 +4,13 @@ from flask_bcrypt import Bcrypt
 from functools import wraps
 import requests
 import os
+import traceback
+
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
 
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "your_secret_key")
 
 # Database Configuration (Using Environment Variables for Security)
 app.config['MYSQL_HOST'] = os.getenv("MYSQL_HOST", "localhost")
@@ -104,6 +107,7 @@ def upload_image():
     return jsonify({"message": "Image uploaded successfully!", "image_name": file.filename}), 200
 
 # 🔹 Trigger CI/CD Scan Automatically
+
 @app.route('/trigger_scan', methods=['POST'])
 def trigger_scan():
     if 'user_id' not in session:
@@ -121,23 +125,28 @@ def trigger_scan():
     }
     payload = {
         "ref": "main",
-        "inputs": { "docker_image": image_name }
+        "inputs": {"docker_image": image_name}
     }
 
-    # 🛠 Print Debug Info
     print("🔹 Sending Request to GitHub Actions")
     print(f"🔹 Headers: {headers}")
     print(f"🔹 Payload: {payload}")
 
-    response = requests.post(GITHUB_ACTIONS_TRIGGER_URL, headers=headers, json=payload)
+    try:
+        response = requests.post(GITHUB_ACTIONS_TRIGGER_URL, headers=headers, json=payload)
+        print(f"🔹 Response Code: {response.status_code}")
+        print(f"🔹 Response Content: {response.text}")
 
-    print(f"🔹 Response Code: {response.status_code}")
-    print(f"🔹 Response Content: {response.text}")
+        if response.status_code == 204:
+            return jsonify({"message": "Scan triggered successfully!"}), 200
+        else:
+            return jsonify({"error": "Failed to trigger scan!", "details": response.json()}), 500
 
-    if response.status_code == 204:
-        return jsonify({"message": "Scan triggered successfully!"}), 200
-    else:
-        return jsonify({"error": "Failed to trigger scan!", "details": response.json()}), 500
+    except Exception as e:
+        print("❌ ERROR in trigger_scan():")
+        print(traceback.format_exc())  # Prints full error traceback
+        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
+
 
 
 # 🔹 Dashboard to View Scan Reports
