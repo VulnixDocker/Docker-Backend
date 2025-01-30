@@ -1,11 +1,7 @@
 name: Docker Scanner CI/CD
 
 on:
-  workflow_dispatch:
-    inputs:
-      docker_image:
-        description: "Docker image to scan"
-        required: true
+  workflow_dispatch
 
 jobs:
   scan:
@@ -15,15 +11,6 @@ jobs:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🛠 Verify Docker Image Input
-        run: |
-          if [[ -z "${{ github.event.inputs.docker_image }}" ]]; then
-            echo "🚨 ERROR: No Docker image specified!"
-            exit 1
-          else
-            echo "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
-          fi
-
       - name: 🐳 Ensure Docker is Running
         run: |
           echo "🔹 Checking Docker status..."
@@ -31,23 +18,25 @@ jobs:
           sleep 5
           docker info
 
-
-      - name: 🐳 Load Uploaded Docker Image
+      - name: 🐳 Find and Load Uploaded Docker Image
+        id: load_image
         run: |
-          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1)
+          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1 || echo "")
           if [ -z "$UPLOADED_FILE" ]; then
             echo "🚨 ERROR: No Docker image tar file found!"
             exit 1
           fi
-            echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
-            docker load -i "$UPLOADED_FILE"
+          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
+          docker load -i "$UPLOADED_FILE"
 
-
-      - name: 🔍 Extract Image Name
-        id: extract_image
-        run: |
+          # Extract the loaded image name
           IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
-          echo "🔹 Extracted image name: $IMAGE_NAME"
+          if [ -z "$IMAGE_NAME" ]; then
+            echo "🚨 ERROR: Could not determine image name after loading!"
+            exit 1
+          fi
+
+          echo "✅ Extracted image name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
       - name: 🔍 Scan with Trivy
@@ -67,6 +56,7 @@ jobs:
           path: |
             trivy-report.txt
             grype-report.txt
+
   store-in-db:
     runs-on: ubuntu-latest
     needs: scan
