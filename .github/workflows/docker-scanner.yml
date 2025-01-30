@@ -18,34 +18,37 @@ jobs:
           sleep 5
           docker info
 
-      - name: 🐳 Find the Latest Docker Image
-        id: find_image
+      - name: 🐳 Find All Docker Images
+        id: find_images
         run: |
-          LATEST_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
-          if [ -z "$LATEST_IMAGE" ]; then
+          IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}")
+          if [ -z "$IMAGES" ]; then
             echo "🚨 ERROR: No Docker images found!"
             exit 1
           fi
-          echo "✅ Latest Docker image found: $LATEST_IMAGE"
-          echo "IMAGE_NAME=$LATEST_IMAGE" >> $GITHUB_ENV
+          echo "✅ Found Docker images:"
+          echo "$IMAGES"
+          echo "IMAGES<<EOF" >> $GITHUB_ENV
+          echo "$IMAGES" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
-      - name: 🔍 Scan with Trivy
+      - name: 🔍 Scan All Images with Trivy & Grype
         run: |
-          echo "🔹 Running Trivy scan on $IMAGE_NAME..."
-          docker run --rm aquasec/trivy image "$IMAGE_NAME" > trivy-report.txt || echo "⚠️ Trivy scan failed!"
-
-      - name: 🔍 Scan with Grype
-        run: |
-          echo "🔹 Running Grype scan on $IMAGE_NAME..."
-          docker run --rm anchore/grype "$IMAGE_NAME" > grype-report.txt || echo "⚠️ Grype scan failed!"
+          echo "$IMAGES" | while read -r IMAGE; do
+            if [ -n "$IMAGE" ]; then
+              echo "🔹 Scanning image: $IMAGE"
+              docker run --rm aquasec/trivy image "$IMAGE" > "trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
+              docker run --rm anchore/grype "$IMAGE" > "grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
+            fi
+          done
 
       - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
           path: |
-            trivy-report.txt
-            grype-report.txt
+            trivy-*.txt
+            grype-*.txt
 
   store-in-db:
     runs-on: ubuntu-latest
@@ -79,7 +82,7 @@ jobs:
       - name: 🔍 Verify Scan Reports Exist
         run: |
           ls -lah
-          if [ ! -f "trivy-report.txt" ] || [ ! -f "grype-report.txt" ]; then
+          if ! ls trivy-*.txt grype-*.txt 1>/dev/null 2>&1; then
             echo "❌ ERROR: Scan reports are missing!"
             exit 1
           else
