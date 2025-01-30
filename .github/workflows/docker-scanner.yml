@@ -18,13 +18,7 @@ jobs:
           sleep 5
           docker info
 
-      - name: 🐳 Pull Default Image If None Exists
-        run: |
-          IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}")
-          if [ -z "$IMAGES" ]; then
-            echo "⚠️ No images found. Pulling a default image..."
-            docker pull alpine:latest
-          fi
+
 
       - name: 🐳 Find All Docker Images
         id: find_images
