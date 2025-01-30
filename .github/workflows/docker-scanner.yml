@@ -18,49 +18,46 @@ jobs:
           sleep 5
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
-      - name: 🐳 Load Uploaded Docker Images (If Any)
+      - name: 🐳 Load Uploaded Docker Image
         run: |
-          for FILE in uploaded_images/*.tar; do
-            if [ -f "$FILE" ]; then
-              echo "✅ Found uploaded Docker image: $FILE"
-              docker load -i "$FILE"
-            fi
-          done
-
-      - name: 🐳 List All Docker Images
-        id: find_images
-        run: |
-          IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v '<none>')
-          if [ -z "$IMAGES" ]; then
-            echo "🚨 ERROR: No Docker images found!"
+          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1)
+          if [ -z "$UPLOADED_FILE" ]; then
+            echo "🚨 ERROR: No Docker image tar file found!"
             exit 1
           fi
-          echo "✅ Found Docker images:"
-          echo "$IMAGES"
-          echo "IMAGES<<EOF" >> $GITHUB_ENV
-          echo "$IMAGES" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
+          docker load -i "$UPLOADED_FILE"
 
-          
+      - name: 🔍 Extract Latest Image Name
+        id: extract_image
+        run: |
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+          if [ -z "$IMAGE_NAME" ]; then
+            echo "🚨 ERROR: No valid Docker image found!"
+            exit 1
+          fi
+          echo "✅ Extracted image name: $IMAGE_NAME"
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+
       - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
           mkdir -p scan_reports
           echo "✅ Created scan_reports directory if missing."
 
-
       - name: 🔍 Scan with Trivy
         run: |
-          IMAGE="${{ github.event.inputs.docker_image }}"
+          IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Trivy scan on $IMAGE..."
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
           echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Scan with Grype
         run: |
-          IMAGE="${{ github.event.inputs.docker_image }}"
+          IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Grype scan on $IMAGE..."
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
           echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
+
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
@@ -75,7 +72,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
-          path: scan_reports
+          path: scan_reports/
+
 
   store-in-db:
     runs-on: ubuntu-latest
