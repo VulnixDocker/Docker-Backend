@@ -24,15 +24,13 @@ jobs:
             echo "✅ Docker image to scan: ${{ github.event.inputs.docker_image }}"
           fi
 
-      - name: 🐳 Start Docker Daemon
+      - name: 🐳 Ensure Docker is Running
         run: |
           echo "🔹 Checking Docker status..."
-          if ! systemctl is-active --quiet docker; then
-            echo "🚀 Starting Docker..."
-            sudo systemctl start docker
-            sleep 5
-          fi
+          sudo systemctl start docker
+          sleep 5
           docker info
+
 
       - name: 🐳 Load Uploaded Docker Image
         run: |
