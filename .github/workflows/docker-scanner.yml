@@ -43,22 +43,31 @@ jobs:
 
       - name: 🔍 Scan All Images with Trivy & Grype
         run: |
+          mkdir -p scan_reports
           echo "$IMAGES" | while read -r IMAGE; do
             if [ -n "$IMAGE" ]; then
               echo "🔹 Scanning image: $IMAGE"
-              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
-              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
+
+              # Ensure Trivy & Grype have access to Docker socket
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
             fi
           done
+
+      - name: 🔍 Ensure Scan Reports Exist
+        run: |
+          if [ -z "$(ls -A scan_reports/)" ]; then
+            echo "🚨 ERROR: No scan reports were generated!"
+            exit 1
+          else
+            echo "✅ Scan reports generated successfully."
+          fi
 
       - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
-          path: |
-            trivy-*.txt
-            grype-*.txt
-
+          path: scan_reports/
 
   store-in-db:
     runs-on: ubuntu-latest
@@ -91,8 +100,7 @@ jobs:
 
       - name: 🔍 Verify Scan Reports Exist
         run: |
-          ls -lah
-          if ! ls trivy-*.txt grype-*.txt 1>/dev/null 2>&1; then
+          if [ -z "$(ls -A scan_reports/)" ]; then
             echo "❌ ERROR: Scan reports are missing!"
             exit 1
           else
