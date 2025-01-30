@@ -34,21 +34,16 @@ jobs:
           fi
           docker info
 
-      - name: 🔄 Load Uploaded Image into Docker
+      - name: 🐳 Load Uploaded Docker Image
         run: |
-          IMAGE_FILE="uploaded_images/${{ github.event.inputs.docker_image }}"
-          if [[ ! "$IMAGE_FILE" == *.tar ]]; then
-            IMAGE_FILE="$IMAGE_FILE.tar"
-          fi
-          echo "🔹 Checking for uploaded Docker image tar file: $IMAGE_FILE"
-          if [ ! -f "$IMAGE_FILE" ]; then
-            echo "🚨 ERROR: Docker image tar file not found!"
-            ls -lah uploaded_images/
+          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1)
+          if [ -z "$UPLOADED_FILE" ]; then
+            echo "🚨 ERROR: No Docker image tar file found!"
             exit 1
           fi
-          echo "✅ Docker image tar found! Loading into Docker..."
-          docker load -i "$IMAGE_FILE"
-          echo "✅ Image successfully loaded."
+            echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
+            docker load -i "$UPLOADED_FILE"
+
 
       - name: 🔍 Extract Image Name
         id: extract_image
