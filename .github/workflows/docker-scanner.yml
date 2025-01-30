@@ -41,18 +41,26 @@ jobs:
           echo "$IMAGES" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      - name: 🔍 Scan All Images with Trivy & Grype
+          
+      - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
-          mkdir -p scan_reports  # ✅ FIX: Ensure directory exists
-          echo "$IMAGES" | while read -r IMAGE; do
-            if [ -n "$IMAGE" ]; then
-              echo "🔹 Scanning image: $IMAGE"
+          mkdir -p scan_reports
+          echo "✅ Created scan_reports directory if missing."
 
-              # Ensure Trivy & Grype have access to Docker socket
-              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
-              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
-            fi
-          done
+
+      - name: 🔍 Scan with Trivy
+        run: |
+          IMAGE="${{ github.event.inputs.docker_image }}"
+          echo "🔹 Running Trivy scan on $IMAGE..."
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
+          echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
+
+      - name: 🔍 Scan with Grype
+        run: |
+          IMAGE="${{ github.event.inputs.docker_image }}"
+          echo "🔹 Running Grype scan on $IMAGE..."
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
+          echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
@@ -67,7 +75,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
-          path: scan_reports/
+          path: scan_reports
 
   store-in-db:
     runs-on: ubuntu-latest
