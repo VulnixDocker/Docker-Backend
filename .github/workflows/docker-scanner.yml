@@ -21,13 +21,26 @@ jobs:
       - name: 🔍 Extract Latest Image Name
         id: extract_image
         run: |
+          echo "🔹 Checking available Docker images..."
+          docker images
+
+          # Ensure at least one image exists
+          if [ -z "$(docker images -q)" ]; then
+            echo "🚨 No Docker images found! Pulling a test image..."
+            docker pull alpine:latest  # You can replace this with your actual image
+          fi
+
+          # Extract image name
           IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+
           if [ -z "$IMAGE_NAME" ]; then
-            echo "🚨 ERROR: No valid Docker image found!"
+            echo "🚨 ERROR: No valid Docker image found even after pulling!"
             exit 1
           fi
+
           echo "✅ Extracted image name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+
 
       - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
