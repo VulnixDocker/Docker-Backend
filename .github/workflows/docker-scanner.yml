@@ -58,14 +58,7 @@ jobs:
             exit 1
           fi
 
-      - name: 🔍 Debug: Check Scan Reports
-        run: |
-          echo "🔹 Checking scan_reports directory..."
-          ls -lah scan_reports/ || echo "⚠ WARNING: scan_reports directory is missing!"
-          echo "🔹 Printing Trivy Report:"
-          cat scan_reports/trivy-*.txt || echo "⚠ No Trivy report found!"
-          echo "🔹 Printing Grype Report:"
-          cat scan_reports/grype-*.txt || echo "⚠ No Grype report found!"
+
 
       - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v4
