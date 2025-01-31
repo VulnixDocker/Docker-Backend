@@ -146,6 +146,10 @@
 #         run: python insert_scan_report.py
 
 
+name: Docker Scanner CI/CD
+
+on:
+  workflow_dispatch:  # ✅ This enables manual triggering
 store-reports:
   runs-on: ubuntu-latest
   needs: scan
