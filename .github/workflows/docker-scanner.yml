@@ -21,7 +21,10 @@ jobs:
       - name: 🔍 Extract Latest Docker Image
         id: extract_image
         run: |
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+          echo "🔹 Available Docker images:"
+          docker images  # Debugging
+
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v '<none>' | head -n 1)
           if [ -z "$IMAGE_NAME" ]; then
             echo "🚨 ERROR: No valid Docker image found!"
             exit 1
@@ -29,7 +32,7 @@ jobs:
           echo "✅ Extracted latest image: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-      - name: 🔍 Ensure `scan_reports` Directory Exists
+      - name: 🔍 Ensure scan_reports Directory Exists
         run: |
           mkdir -p scan_reports
           echo "✅ Created scan_reports directory if missing."
@@ -91,7 +94,7 @@ jobs:
       - name: 🗄 Wait for MySQL to Be Ready
         run: |
           for i in {1..30}; do
-            if mysql -h 192.168.1.5 -u flask_user -pAbhiram@1729 -e "SELECT 1"; then
+            if mysqladmin ping -h 192.168.1.5 --silent; then
               echo "✅ MySQL is ready!"
               break
             fi
