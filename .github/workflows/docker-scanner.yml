@@ -187,30 +187,27 @@ jobs:
           echo "✅ Extracted image name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-      - name: 🔍 Ensure `scan_reports` Directory Exists
-        run: |
-          mkdir -p scan_reports
-          echo "✅ Created scan_reports directory if missing."
-
       - name: 🔍 Scan with Trivy
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Trivy scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --scanners vuln "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
-          echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --scanners vuln "$IMAGE" > "trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
+          echo "✅ Trivy report saved: trivy-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Grype scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
-          echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
+          echo "✅ Grype report saved: grype-${IMAGE//[:\/]/_}.txt"
 
       - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
-          path: scan_reports/*.txt
+          path: |
+            trivy-*.txt
+            grype-*.txt
 
 
   store-reports:
@@ -262,18 +259,42 @@ jobs:
       - name: 🗄 Deploy MySQL Schema
         run: |
           echo "🔹 Creating MySQL schema if not exists..."
-          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management < schema.sql
+          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
+          CREATE TABLE IF NOT EXISTS scan_reports (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              scanner_name VARCHAR(255) NOT NULL,
+              file_name VARCHAR(255) NOT NULL,
+              report_text LONGTEXT NOT NULL,
+              scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          EOF
           echo "✅ MySQL schema deployed!"
 
       - name: 🗄 Store Scan Reports in MySQL
-        uses: calxus/mysql-deploy-action@v1
-        with:
-          DATABASE_HOST: '127.0.0.1'
-          DATABASE_PORT: '3306'
-          DATABASE_NAME: 'docker_management'
-          DATABASE_USERNAME: 'flask_user'
-          DATABASE_PASSWORD: 'Abhiram@1729'
-          DATABASE_SCRIPT: 'schema.sql'
+        run: |
+          echo "🔹 Storing Trivy and Grype reports in MySQL..."
+          
+          # Store Trivy report
+          TRIVY_FILE=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
+          if [ -n "$TRIVY_FILE" ]; then
+            REPORT_TEXT=$(cat "$TRIVY_FILE" | head -c 10000) # Limiting to avoid excessive data
+            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
+            INSERT INTO scan_reports (scanner_name, file_name, report_text) VALUES 
+            ('Trivy', '$TRIVY_FILE', '$REPORT_TEXT');
+            EOF
+            echo "✅ Trivy report stored!"
+          fi
+
+          # Store Grype report
+          GRYPE_FILE=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
+          if [ -n "$GRYPE_FILE" ]; then
+            REPORT_TEXT=$(cat "$GRYPE_FILE" | head -c 10000) # Limiting to avoid excessive data
+            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
+            INSERT INTO scan_reports (scanner_name, file_name, report_text) VALUES 
+            ('Grype', '$GRYPE_FILE', '$REPORT_TEXT');
+            EOF
+            echo "✅ Grype report stored!"
+          fi
 
       - name: 🗄 Move Reports to Permanent Storage
         run: |
