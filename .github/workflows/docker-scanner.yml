@@ -1,7 +1,7 @@
 name: Docker Scanner CI/CD
 
 on:
-  workflow_dispatch: w
+  workflow_dispatch:
 
 jobs:
   scan:
@@ -41,15 +41,12 @@ jobs:
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠ Trivy scan failed!"
           echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
 
-
       - name: 🔍 Scan with Grype
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Grype scan on $IMAGE..."
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠ Grype scan failed!"
           echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
-
-
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
@@ -60,6 +57,7 @@ jobs:
             ls -lah scan_reports/
             exit 1
           fi
+
       - name: 🔍 Debug: Check Scan Reports
         run: |
           echo "🔹 Checking scan_reports directory..."
@@ -69,13 +67,11 @@ jobs:
           echo "🔹 Printing Grype Report:"
           cat scan_reports/grype-*.txt || echo "⚠ No Grype report found!"
 
-
       - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
           path: scan_reports/*.txt
-
 
   store-in-db:
     runs-on: ubuntu-latest
