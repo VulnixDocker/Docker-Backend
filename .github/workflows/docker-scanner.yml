@@ -108,6 +108,7 @@ jobs:
           nc -zv 192.168.1.5 3306 || echo "❌ MySQL is not reachable on port 3306!"
           MYSQL_PWD="Abhiram@1729" mysql -h 192.168.1.5 -u flask_user -e "SELECT 1;" || echo "❌ MySQL query failed!"
 
+
       - name: 🗄 Wait for MySQL to Be Ready
         run: |
           export MYSQL_PWD="Abhiram@1729"
