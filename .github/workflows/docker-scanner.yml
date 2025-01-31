@@ -146,158 +146,98 @@
 #         run: python insert_scan_report.py
 
 
-name: Docker Scanner CI/CD
+store-reports:
+  runs-on: ubuntu-latest
+  needs: scan
 
-on:
-  workflow_dispatch:
+  services:
+    mysql:
+      image: mysql:latest
+      env:
+        MYSQL_ROOT_PASSWORD: rootpassword
+        MYSQL_DATABASE: docker_management
+        MYSQL_USER: flask_user
+        MYSQL_PASSWORD: Abhiram@1729
+      ports:
+        - 3306:3306
+      options: >-
+        --health-cmd="mysqladmin ping --host=127.0.0.1 --user=flask_user --password=Abhiram@1729"
+        --health-interval=10s
+        --health-timeout=5s
+        --health-retries=5
 
-jobs:
-  scan:
-    runs-on: ubuntu-latest
+  steps:
+    - name: 🔥 Checkout Repository
+      uses: actions/checkout@v4
 
-    steps:
-      - name: 🔥 Checkout Repository
-        uses: actions/checkout@v4
+    - name: 📥 Download Scan Reports
+      uses: actions/download-artifact@v4
+      with:
+        name: Scanner Reports
+        path: scan_reports
 
-      - name: 🐳 Ensure Docker Daemon is Running
-        run: |
-          echo "🔹 Checking Docker status..."
-          sudo systemctl start docker
-          sleep 5
-          docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
+    - name: 🔍 Verify Scan Reports Exist
+      run: |
+        echo "🔹 Checking for scan reports..."
+        ls -lah scan_reports/ || echo "⚠️ WARNING: scan_reports directory is missing!"
 
-      - name: 🐳 Load Uploaded Docker Image
-        run: |
-          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1)
-          if [ -z "$UPLOADED_FILE" ]; then
-            echo "🚨 ERROR: No Docker image tar file found!"
-            exit 1
-          fi
-          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
-          docker load -i "$UPLOADED_FILE"
+        # Check if reports exist
+        TRIVY_REPORT=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
+        GRYPE_REPORT=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
 
-      - name: 🔍 Extract Latest Image Name
-        id: extract_image
-        run: |
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
-          if [ -z "$IMAGE_NAME" ]; then
-            echo "🚨 ERROR: No valid Docker image found!"
-            exit 1
-          fi
-          echo "✅ Extracted image name: $IMAGE_NAME"
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+        if [ -z "$TRIVY_REPORT" ] && [ -z "$GRYPE_REPORT" ]; then
+          echo "❌ ERROR: No scan reports found!"
+          exit 1
+        else
+          echo "✅ Scan reports found: $TRIVY_REPORT $GRYPE_REPORT"
+        fi
 
-      - name: 🔍 Scan with Trivy
-        run: |
-          IMAGE="${{ env.IMAGE_NAME }}"
-          echo "🔹 Running Trivy scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --scanners vuln "$IMAGE" > "trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Trivy scan failed!"
-          echo "✅ Trivy report saved: trivy-${IMAGE//[:\/]/_}.txt"
+    - name: 🗄 Deploy MySQL Schema
+      run: |
+        echo "🔹 Creating MySQL schema if not exists..."
+        mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
+        CREATE TABLE IF NOT EXISTS scan_reports (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            scanner_name VARCHAR(255) NOT NULL,
+            file_name VARCHAR(255) NOT NULL,
+            report_text LONGTEXT NOT NULL,
+            scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+EOF
+        echo "✅ MySQL schema deployed!"
 
-      - name: 🔍 Scan with Grype
-        run: |
-          IMAGE="${{ env.IMAGE_NAME }}"
-          echo "🔹 Running Grype scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "grype-${IMAGE//[:\/]/_}.txt" || echo "⚠️ Grype scan failed!"
-          echo "✅ Grype report saved: grype-${IMAGE//[:\/]/_}.txt"
+    - name: 🗄 Store Scan Reports in MySQL
+      run: |
+        echo "🔹 Storing Trivy and Grype reports in MySQL..."
 
-      - name: 📤 Upload Scan Reports as Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: Scanner Reports
-          path: |
-            trivy-*.txt
-            grype-*.txt
-
-
-  store-reports:
-    runs-on: ubuntu-latest
-    needs: scan
-
-    services:
-      mysql:
-        image: mysql:latest
-        env:
-          MYSQL_ROOT_PASSWORD: rootpassword
-          MYSQL_DATABASE: docker_management
-          MYSQL_USER: flask_user
-          MYSQL_PASSWORD: Abhiram@1729
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=flask_user --password=Abhiram@1729"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
-    steps:
-      - name: 🔥 Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: 📥 Download Scan Reports
-        uses: actions/download-artifact@v4
-        with:
-          name: Scanner Reports
-          path: scan_reports
-
-      - name: 🔍 Verify Scan Reports Exist
-        run: |
-          echo "🔹 Checking for scan reports..."
-          ls -lah scan_reports/ || echo "⚠️ WARNING: scan_reports directory is missing!"
-
-          # Check if reports exist
-          TRIVY_REPORT=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
-          GRYPE_REPORT=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
-
-          if [ -z "$TRIVY_REPORT" ] && [ -z "$GRYPE_REPORT" ]; then
-            echo "❌ ERROR: No scan reports found!"
-            exit 1
-          else
-            echo "✅ Scan reports found: $TRIVY_REPORT $GRYPE_REPORT"
-          fi
-
-      - name: 🗄 Deploy MySQL Schema
-        run: |
-          echo "🔹 Creating MySQL schema if not exists..."
+        # Store Trivy report
+        TRIVY_FILE=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
+        if [ -n "$TRIVY_FILE" ]; then
+          REPORT_TEXT=$(cat "$TRIVY_FILE" | head -c 10000) # Limit to avoid overflow
           mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
-          CREATE TABLE IF NOT EXISTS scan_reports (
-              id INT AUTO_INCREMENT PRIMARY KEY,
-              scanner_name VARCHAR(255) NOT NULL,
-              file_name VARCHAR(255) NOT NULL,
-              report_text LONGTEXT NOT NULL,
-              scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          );
-          EOF
-          echo "✅ MySQL schema deployed!"
+          INSERT INTO scan_reports (scanner_name, file_name, report_text) VALUES 
+          ('Trivy', '$TRIVY_FILE', '$REPORT_TEXT');
+EOF
+          echo "✅ Trivy report stored!"
+        else
+          echo "⚠️ No Trivy report found!"
+        fi
 
-      - name: 🗄 Store Scan Reports in MySQL
-        run: |
-          echo "🔹 Storing Trivy and Grype reports in MySQL..."
-          
-          # Store Trivy report
-          TRIVY_FILE=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
-          if [ -n "$TRIVY_FILE" ]; then
-            REPORT_TEXT=$(cat "$TRIVY_FILE" | head -c 10000) # Limiting to avoid excessive data
-            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
-            INSERT INTO scan_reports (scanner_name, file_name, report_text) VALUES 
-            ('Trivy', '$TRIVY_FILE', '$REPORT_TEXT');
-            EOF
-            echo "✅ Trivy report stored!"
-          fi
+        # Store Grype report
+        GRYPE_FILE=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
+        if [ -n "$GRYPE_FILE" ]; then
+          REPORT_TEXT=$(cat "$GRYPE_FILE" | head -c 10000) # Limit to avoid overflow
+          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
+          INSERT INTO scan_reports (scanner_name, file_name, report_text) VALUES 
+          ('Grype', '$GRYPE_FILE', '$REPORT_TEXT');
+EOF
+          echo "✅ Grype report stored!"
+        else
+          echo "⚠️ No Grype report found!"
+        fi
 
-          # Store Grype report
-          GRYPE_FILE=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
-          if [ -n "$GRYPE_FILE" ]; then
-            REPORT_TEXT=$(cat "$GRYPE_FILE" | head -c 10000) # Limiting to avoid excessive data
-            mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
-            INSERT INTO scan_reports (scanner_name, file_name, report_text) VALUES 
-            ('Grype', '$GRYPE_FILE', '$REPORT_TEXT');
-            EOF
-            echo "✅ Grype report stored!"
-          fi
-
-      - name: 🗄 Move Reports to Permanent Storage
-        run: |
-          mkdir -p /var/reports/
-          cp scan_reports/*.txt /var/reports/
-          echo "✅ Scan reports moved to /var/reports/ for permanent storage."
+    - name: 🗄 Move Reports to Permanent Storage
+      run: |
+        mkdir -p /var/reports/
+        cp scan_reports/*.txt /var/reports/
+        echo "✅ Scan reports moved to /var/reports/ for permanent storage."
