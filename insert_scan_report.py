@@ -9,6 +9,7 @@ MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "Abhiram@1729")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "docker_management")
 
 # ✅ Connect to MySQL
+# ✅ Connect to MySQL
 try:
     db = mysql.connector.connect(
         host=MYSQL_HOST,
@@ -34,7 +35,7 @@ try:
 
 except Exception as e:
     print(f"❌ MySQL Connection Error: {e}")
-    exit(1)
+    exit(1)  # Exit the script if the database connection fails
 
 # ✅ Function to Store Reports in MySQL
 def insert_report(scanner_name, file_pattern):
@@ -44,33 +45,40 @@ def insert_report(scanner_name, file_pattern):
         print(f"⚠️ WARNING: No reports found for {scanner_name}. Skipping...")
         return
 
-    for file_path in files:
-        try:
-            # Read report
-            with open(file_path, "r", encoding="utf-8") as file:
-                report_text = file.read()
-            
-            # Print report to verify content
-            print(f"🔹 {scanner_name} Report Content ({file_path}):\n{report_text[:500]}")  # Print first 500 characters
+    try:
+        # Start a transaction
+        db.start_transaction()
 
-            file_name = os.path.basename(file_path)  # Extract file name
+        for file_path in files:
+            try:
+                print(f"🔹 Verifying {scanner_name} report: {file_path}")
+                os.system(f"cat {file_path}")  # 🔍 Print the report before inserting
 
-            sql = """INSERT INTO scan_reports (user_id, scanner_name, file_name, report_text, scanned_at)
-                     VALUES (%s, %s, %s, %s, NOW())"""
-            values = (1, scanner_name, file_name, report_text)  # Assuming user_id = 1
+                with open(file_path, "r", encoding="utf-8") as file:
+                    report_text = file.read()
 
-            cursor.execute(sql, values)
-            db.commit()
-            print(f"✅ {scanner_name} report stored successfully from {file_path}")
+                file_name = os.path.basename(file_path)  # Extract file name
 
-            # Print total rows after insertion
-            cursor.execute("SELECT COUNT(*) FROM scan_reports;")
-            count = cursor.fetchone()[0]
-            print(f"🔹 Total rows in `scan_reports`: {count}")
+                sql = """INSERT INTO scan_reports (user_id, scanner_name, file_name, report_text, scanned_at)
+                         VALUES (%s, %s, %s, %s, NOW())"""
+                values = (1, scanner_name, file_name, report_text)  # Assuming user_id = 1
 
-        except Exception as e:
-            print(f"❌ Error storing {scanner_name} report from {file_path}: {e}")
+                cursor.execute(sql, values)
+                print(f"✅ {scanner_name} report stored successfully from {file_path}")
 
+            except Exception as e:
+                print(f"❌ Error storing {scanner_name} report from {file_path}: {e}")
+                # Rollback the transaction if any INSERT fails
+                db.rollback()
+                raise  # Re-raise the exception to stop further processing
+
+        # Commit the transaction if all INSERTs succeed
+        db.commit()
+
+    except Exception as e:
+        print(f"❌ Transaction failed: {e}")
+        db.rollback()  # Ensure rollback on any unexpected error
+        raise  # Re-raise the exception to stop further processing
 
 # ✅ Ensure at least one report exists before proceeding
 if not glob.glob("trivy-*.txt") and not glob.glob("grype-*.txt"):
@@ -78,8 +86,12 @@ if not glob.glob("trivy-*.txt") and not glob.glob("grype-*.txt"):
     exit(1)
 
 # ✅ Store Reports
-insert_report("Trivy", "trivy-*.txt")
-insert_report("Grype", "grype-*.txt")
+try:
+    insert_report("Trivy", "trivy-*.txt")
+    insert_report("Grype", "grype-*.txt")
+except Exception as e:
+    print(f"❌ Critical error during report insertion: {e}")
+    exit(1)  # Exit the script if any report insertion fails
 
 # ✅ Print Final Table Contents
 print("🔹 Final Contents of `scan_reports` Table:")
