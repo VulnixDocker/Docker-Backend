@@ -41,7 +41,6 @@ jobs:
           echo "✅ Extracted image name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-
       - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
           mkdir -p scan_reports
@@ -71,15 +70,13 @@ jobs:
             exit 1
           fi
 
-
-
       - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
           path: scan_reports/*.txt
 
-    store-in-db:
+  store-in-db:
     runs-on: ubuntu-latest
     needs: scan
 
@@ -109,12 +106,13 @@ jobs:
         run: |
           echo "🔹 Checking MySQL Connection..."
           nc -zv 192.168.1.5 3306 || echo "❌ MySQL is not reachable on port 3306!"
-          mysql -h 192.168.1.5 -u flask_user -pAbhiram@1729 -e "SELECT 1;" || echo "❌ MySQL query failed!"
+          MYSQL_PWD="Abhiram@1729" mysql -h 192.168.1.5 -u flask_user -e "SELECT 1;" || echo "❌ MySQL query failed!"
 
       - name: 🗄 Wait for MySQL to Be Ready
         run: |
+          export MYSQL_PWD="Abhiram@1729"
           for i in {1..30}; do
-            if mysql -h 192.168.1.5 -u flask_user -pAbhiram@1729 -e "SELECT 1;" > /dev/null 2>&1; then
+            if mysql -h 192.168.1.5 -u flask_user -e "SELECT 1;" > /dev/null 2>&1; then
               echo "✅ MySQL is ready!"
               break
             fi
@@ -124,3 +122,8 @@ jobs:
 
       - name: 🗄 Store Scan Data in Local MySQL
         run: python insert_scan_report.py
+        env:
+          MYSQL_HOST: "192.168.1.5"
+          MYSQL_USER: "flask_user"
+          MYSQL_PASSWORD: "Abhiram@1729"
+          MYSQL_DATABASE: "docker_management"
