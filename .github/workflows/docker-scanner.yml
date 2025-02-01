@@ -99,10 +99,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install mysql-connector-python
           
-          echo "🔹 Installing Skeema..."
-          wget -O skeema.tar.gz "https://github.com/skeema/skeema/releases/latest/download/skeema_linux_amd64.tar.gz" || { echo "❌ Skeema download failed"; exit 1; }
-          tar -xzf skeema.tar.gz
-          sudo mv skeema /usr/local/bin/
+          echo "🔹 Installing Skeema via npm..."
+          npm install -g skeema
           skeema --version
 
       - name: 🗄 Run Skeema Migrations
@@ -116,5 +114,5 @@ jobs:
           INSERT INTO scan_reports (scanner_name, file_name, report_text)
           VALUES ('Trivy', 'trivy-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/trivy-${{ env.IMAGE_NAME }}.txt')),
                  ('Grype', 'grype-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/grype-${{ env.IMAGE_NAME }}.txt'));
-          
+          " docker_management
           echo "✅ Scan reports successfully inserted into MySQL!"
