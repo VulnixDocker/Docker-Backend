@@ -95,7 +95,7 @@ jobs:
           echo "🔹 Checking for scan reports..."
           ls -lah scan_reports/ || echo "⚠ WARNING: scan_reports directory is missing!"
 
-      - name: 🛠 Install MySQL Client and Skeema
+            - name: 🛠 Install MySQL Client and Skeema
         run: |
           sudo apt-get update
           sudo apt-get install -y mysql-client
@@ -103,7 +103,8 @@ jobs:
           pip install mysql-connector-python
 
           echo "🔹 Downloading Skeema..."
-          wget -O skeema.tar.gz https://github.com/skeema/skeema/releases/latest/download/skeema_linux_amd64.tar.gz
+          SKEEMA_VERSION="1.12.1"  # Specify a valid version
+          wget -O skeema.tar.gz "https://github.com/skeema/skeema/releases/download/v${SKEEMA_VERSION}/skeema_linux_amd64.tar.gz"
 
           echo "🔹 Extracting Skeema..."
           tar -xzf skeema.tar.gz || { echo "❌ ERROR: Skeema extraction failed!"; exit 1; }
@@ -113,6 +114,7 @@ jobs:
 
           echo "✅ Skeema installed successfully!"
           skeema --version
+
 
       - name: 🔍 Debug MySQL Connection
         run: |
