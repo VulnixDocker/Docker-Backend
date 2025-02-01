@@ -47,9 +47,11 @@ jobs:
       - name: 🔍 Scan with Trivy
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
+          SAFE_IMAGE_NAME=$(echo "$IMAGE" | sed 's/[\/:]/_/g')  # Correct replacement
           echo "🔹 Running Trivy scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠ Trivy scan failed!"
-          echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-$SAFE_IMAGE_NAME.txt" || echo "⚠ Trivy scan failed!"
+          echo "✅ Trivy report saved: scan_reports/trivy-$SAFE_IMAGE_NAME.txt"
+
 
       - name: 🔍 Scan with Grype
         run: |
