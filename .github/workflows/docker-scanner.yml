@@ -116,5 +116,5 @@ jobs:
           INSERT INTO scan_reports (scanner_name, file_name, report_text)
           VALUES ('Trivy', 'trivy-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/trivy-${{ env.IMAGE_NAME }}.txt')),
                  ('Grype', 'grype-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/grype-${{ env.IMAGE_NAME }}.txt'));
-EOF
+          
           echo "✅ Scan reports successfully inserted into MySQL!"
