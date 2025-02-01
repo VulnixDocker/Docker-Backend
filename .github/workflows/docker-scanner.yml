@@ -24,11 +24,13 @@ jobs:
           echo "🔹 Checking available Docker images..."
           docker images
 
+          # Ensure at least one image exists
           if [ -z "$(docker images -q)" ]; then
             echo "🚨 No Docker images found! Pulling a test image..."
-            docker pull alpine:latest  
+            docker pull alpine:latest
           fi
 
+          # Extract image name
           IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
 
           if [ -z "$IMAGE_NAME" ]; then
@@ -47,18 +49,16 @@ jobs:
       - name: 🔍 Scan with Trivy
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
-          SAFE_IMAGE_NAME=$(echo "$IMAGE" | sed 's/[\/:]/_/g')
           echo "🔹 Running Trivy scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-$SAFE_IMAGE_NAME.txt" || echo "⚠ Trivy scan failed!"
-          echo "✅ Trivy report saved: scan_reports/trivy-$SAFE_IMAGE_NAME.txt"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠ Trivy scan failed!"
+          echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
-          SAFE_IMAGE_NAME=$(echo "$IMAGE" | sed 's/[\/:]/_/g')
           echo "🔹 Running Grype scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-$SAFE_IMAGE_NAME.txt" || echo "⚠ Grype scan failed!"
-          echo "✅ Grype report saved: scan_reports/grype-$SAFE_IMAGE_NAME.txt"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠ Grype scan failed!"
+          echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
@@ -99,30 +99,31 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y mysql-client
-          curl -LO https://github.com/skeema/skeema/releases/latest/download/skeema_linux_amd64.tar.gz
-          tar -xzf skeema_linux_amd64.tar.gz
-          sudo mv skeema /usr/local/bin/
-          skeema --version
           python -m pip install --upgrade pip
           pip install mysql-connector-python
 
+          echo "🔹 Downloading Skeema..."
+          wget -O skeema.tar.gz https://github.com/skeema/skeema/releases/latest/download/skeema_linux_amd64.tar.gz
+
+          echo "🔹 Extracting Skeema..."
+          tar -xzf skeema.tar.gz || { echo "❌ ERROR: Skeema extraction failed!"; exit 1; }
+
+          echo "🔹 Moving Skeema to /usr/local/bin/"
+          sudo mv skeema /usr/local/bin/
+
+          echo "✅ Skeema installed successfully!"
+          skeema --version
+
       - name: 🔍 Debug MySQL Connection
-        env:
-          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
-          MYSQL_USER: ${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
         run: |
           echo "🔹 Checking MySQL Connection..."
-          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1;" || echo "❌ MySQL query failed!"
+          mysql -h 192.168.1.5 -u flask_user -pAbhiram@1729 -e "SELECT 1;" || echo "❌ MySQL query failed!"
 
       - name: 🗄 Wait for MySQL to Be Ready
-        env:
-          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
-          MYSQL_USER: ${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
         run: |
+          export MYSQL_PWD="Abhiram@1729"
           for i in {1..30}; do
-            if mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1;" > /dev/null 2>&1; then
+            if mysql -h 192.168.1.5 -u flask_user -e "SELECT 1;" > /dev/null 2>&1; then
               echo "✅ MySQL is ready!"
               break
             fi
@@ -130,45 +131,23 @@ jobs:
             sleep 2
           done
 
-      - name: 🛠 Run Database Migrations with Skeema
-        env:
-          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
-          MYSQL_USER: ${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+      - name: 📄 Apply MySQL Schema Using Skeema
         run: |
+          echo "🔹 Applying database schema using Skeema..."
           skeema init
-          echo "[mydb]" >> .skeema
-          echo "host=\"$MYSQL_HOST\"" >> .skeema
-          echo "user=\"$MYSQL_USER\"" >> .skeema
-          echo "password=\"$MYSQL_PASSWORD\"" >> .skeema
-          echo "schema=docker_management" >> .skeema
-          skeema diff
-          skeema push
+          skeema push --host=192.168.1.5 --user=flask_user --password=Abhiram@1729 --schema=docker_management
+          echo "✅ Schema applied successfully!"
 
       - name: 🗄 Store Scan Data in Local MySQL
-        env:
-          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
-          MYSQL_USER: ${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-          MYSQL_DATABASE: "docker_management"
         run: |
-          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "
-          CREATE TABLE IF NOT EXISTS scan_reports (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            scanner_name VARCHAR(255) NOT NULL,
-            file_name VARCHAR(255) NOT NULL,
-            report_text LONGTEXT NOT NULL,
-            scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          );"
+          echo "🔹 Storing scan reports in MySQL..."
+          for file in scan_reports/*.txt; do
+            REPORT_TEXT=$(cat "$file" | head -c 10000)  # Prevent oversized data
+            FILE_NAME=$(basename "$file")
+            SCANNER_NAME=$(echo "$FILE_NAME" | cut -d'-' -f1)
 
-          for FILE in scan_reports/*.txt; do
-            SCANNER=$(echo $FILE | grep -oP 'trivy|grype')
-            REPORT_TEXT=$(head -c 10000 "$FILE")
-            FILE_NAME=$(basename "$FILE")
-
-            mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "
-            INSERT INTO scan_reports (scanner_name, file_name, report_text) 
-            VALUES ('$SCANNER', '$FILE_NAME', '$REPORT_TEXT');"
+            mysql -h 192.168.1.5 -u flask_user -pAbhiram@1729 docker_management -e "
+            INSERT INTO scan_reports (scanner_name, file_name, report_text, scanned_at)
+            VALUES ('$SCANNER_NAME', '$FILE_NAME', '$REPORT_TEXT', NOW());"
           done
-
-          echo "✅ Scan reports successfully stored in MySQL!"
+          echo "✅ Scan reports stored successfully!"
