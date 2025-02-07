@@ -1,28 +1,26 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scan Reports</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
+    </style>
 </head>
 <body>
     <h1>Scan Reports</h1>
+    
     {% if reports %}
-    <table border="1">
-        <tr>
-            <th>Scanner</th>
-            <th>Scanned At</th>
-            <th>Download</th>
-        </tr>
         {% for report in reports %}
-        <tr>
-            <td>{{ report[1] }}</td>
-            <td>{{ report[2] }}</td>
-            <td><a href="/download/{{ report[0] }}">Download</a></td>
-        </tr>
+            <h2>{{ report.scanner }} Report: {{ report.file_name }}</h2>
+            <pre>{{ report.content }}</pre>
+            <hr>
         {% endfor %}
-    </table>
     {% else %}
-    <p>No scan reports found. <a href="/scanning-page">Run a scan</a>.</p>
+        <p>No scan reports available.</p>
     {% endif %}
-    <a href="/logout">Logout</a>
 </body>
 </html>

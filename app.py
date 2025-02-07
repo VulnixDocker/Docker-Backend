@@ -5,6 +5,7 @@ from functools import wraps
 import os
 import subprocess
 import requests
+import glob
 import traceback
 
 app = Flask(__name__)
@@ -97,68 +98,56 @@ def login():
         return redirect(url_for('login_page'))
 
 # 🔹 Upload & Load Docker Image into Docker Daemon
-
-
 @app.route('/upload', methods=['POST'])
 def upload_image():
     try:
-        print("🔹 Received upload request...")
-
         if 'docker_image' not in request.files:
-            print("❌ ERROR: No file uploaded!")
             return jsonify({"error": "No file uploaded!"}), 400
 
         file = request.files['docker_image']
         if file.filename == '':
-            print("❌ ERROR: Invalid file!")
             return jsonify({"error": "Invalid file!"}), 400
 
         file_path = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(file_path)
+
         print(f"✅ File saved successfully: {file_path}")
 
-        # 🔹 Load the Docker image from the file
-        print(f"🔹 Loading image into Docker from {file_path}...")
+        # 🔹 Load Image into Docker
         load_result = subprocess.run(["docker", "load", "-i", file_path], capture_output=True, text=True, check=True)
         print(f"✅ Docker Load Output:\n{load_result.stdout}")
 
-        # 🔹 Extract Image Name from Docker Output
-        output_lines = load_result.stdout.strip().split("\n")
-        loaded_image = None
+        # 🔹 Identify Latest Image
+        latest_image = subprocess.run(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}", "--no-trunc"],
+                                      capture_output=True, text=True, check=True).stdout.split("\n")[0]
 
-        for line in output_lines:
-            if "Loaded image:" in line:
-                loaded_image = line.split("Loaded image:")[-1].strip()
-                break
+        if not latest_image:
+            return jsonify({"error": "Failed to identify latest Docker image"}), 500
 
-        if not loaded_image:
-            print("❌ ERROR: Could not extract image name from Docker load output!")
-            return jsonify({"error": "Failed to extract image name from Docker"}), 500
+        print(f"✅ Latest Docker image: {latest_image}")
 
-        print(f"✅ Extracted Docker image name: {loaded_image}")
+        # 🔹 Trigger GitHub Actions Automatically
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": f"Bearer {GITHUB_TOKEN}"
+        }
+        payload = {
+            "ref": "main",
+            "inputs": {}  # No need to pass image name anymore
+        }
 
-        # 🔹 Verify the image exists in Docker
-        print(f"🔹 Checking if image '{loaded_image}' exists in Docker...")
-        check_result = subprocess.run(["docker", "images", "-q", loaded_image], capture_output=True, text=True)
+        response = requests.post(GITHUB_ACTIONS_TRIGGER_URL, headers=headers, json=payload)
 
-        if not check_result.stdout.strip():
-            print(f"❌ ERROR: Image '{loaded_image}' is NOT found in Docker after loading!")
-            return jsonify({"error": "Docker image was not successfully loaded!"}), 500
-
-        print(f"✅ Docker image is successfully available: {loaded_image}")
-        return jsonify({"message": "Image uploaded & loaded into Docker!", "image_name": loaded_image}), 200
+        if response.status_code == 204:
+            return jsonify({"message": "Scan triggered successfully!", "image_name": latest_image}), 200
+        else:
+            return jsonify({"error": "Failed to trigger scan!", "details": response.json()}), 500
 
     except subprocess.CalledProcessError as e:
-        print(f"❌ ERROR: Failed to load image into Docker!\n{e.stderr}")
-        print(traceback.format_exc())
         return jsonify({"error": "Failed to load image into Docker", "details": e.stderr}), 500
 
     except Exception as e:
-        print(f"❌ ERROR: Unexpected issue occurred: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
-
-
 
 # 🔹 Trigger CI/CD Scan via GitHub Actions
 @app.route('/trigger_scan', methods=['POST'])
@@ -204,15 +193,25 @@ def trigger_scan():
 # 🔹 View Scan Reports on Dashboard
 @app.route('/dashboard')
 def dashboard():
-    if 'user_id' not in session:
-        return redirect(url_for('login_page'))
+    # 🔹 List all scan reports
+    scan_reports = glob.glob("trivy-*.txt") + glob.glob("grype-*.txt")
 
-    user_id = session['user_id']
+    if not scan_reports:
+        print("❌ No scan reports found in the directory!")
+        return render_template("dashboard.html", reports=[])
 
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT id, scanner_name, report_text, scanned_at FROM scan_reports WHERE user_id = %s ORDER BY scanned_at DESC", (user_id,))
-    reports = cur.fetchall()
-    cur.close()
+    reports = []
+
+    # Read reports and store contents
+    for report in scan_reports:
+        with open(report, "r", encoding="utf-8") as file:
+            reports.append({
+                "scanner": "Trivy" if "trivy" in report else "Grype",
+                "file_name": os.path.basename(report),
+                "content": file.read()
+            })
+
+    print(f"✅ Loaded {len(reports)} scan reports successfully!")
 
     return render_template("dashboard.html", reports=reports)
 
