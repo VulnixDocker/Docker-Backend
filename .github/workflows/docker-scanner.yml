@@ -16,32 +16,24 @@ jobs:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 📥 Download Uploaded Docker Image
-        uses: actions/download-artifact@v4
+      - name: 🐳 Ensure Docker Daemon is Running
+        run: |
+          echo "🔹 Checking Docker status..."
+          sudo systemctl start docker
+          sleep 5
+          docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
+
+      - name: 🐳 Save Docker Image Locally
+        run: |
+          mkdir -p uploaded_images
+          docker save -o uploaded_images/latest_image.tar ${{ github.event.inputs.docker_image }}
+          echo "✅ Docker image saved as uploaded_images/latest_image.tar"
+
+      - name: 📤 Upload Docker Image Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: Uploaded Docker Image
-          path: uploaded_images
-
-      - name: 🐳 Load Uploaded Docker Image
-        run: |
-          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1)
-          if [ -z "$UPLOADED_FILE" ]; then
-            echo "🚨 ERROR: No Docker image tar file found!"
-            exit 1
-          fi
-          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
-          docker load -i "$UPLOADED_FILE"
-
-      - name: 🔍 Extract Latest Image Name
-        id: extract_image
-        run: |
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
-          if [ -z "$IMAGE_NAME" ]; then
-            echo "🚨 ERROR: No valid Docker image found!"
-            exit 1
-          fi
-          echo "✅ Extracted image name: $IMAGE_NAME"
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          name: Docker Image
+          path: uploaded_images/latest_image.tar
 
       - name: 🔍 Ensure scan_reports Directory Exists
         run: |
@@ -50,26 +42,25 @@ jobs:
 
       - name: 🔍 Scan with Trivy
         run: |
-          IMAGE="${{ env.IMAGE_NAME }}"
+          IMAGE="${{ github.event.inputs.docker_image }}"
           echo "🔹 Running Trivy scan on $IMAGE..."
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --scanners vuln "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
           echo "✅ Trivy scan completed!"
 
       - name: 🔍 Scan with Grype
         run: |
-          IMAGE="${{ env.IMAGE_NAME }}"
+          IMAGE="${{ github.event.inputs.docker_image }}"
           echo "🔹 Running Grype scan on $IMAGE..."
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt"
           echo "✅ Grype scan completed!"
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
-          if ls scan_reports/trivy-*.txt 1> /dev/null 2>&1 && ls scan_reports/grype-*.txt 1> /dev/null 2>&1; then
-            echo "✅ Scan reports found!"
-          else
+          if [ ! -f "scan_reports/trivy-${{ github.event.inputs.docker_image }}.txt" ] || [ ! -f "scan_reports/grype-${{ github.event.inputs.docker_image }}.txt" ]; then
             echo "❌ ERROR: Scan reports are missing!"
             exit 1
           fi
+          echo "✅ Scan reports found."
 
       - name: 📤 Upload Scan Reports as Artifacts
         uses: actions/upload-artifact@v4
@@ -108,11 +99,22 @@ jobs:
           name: Scanner Reports
           path: scan_reports
 
+      - name: 📥 Download Docker Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Docker Image
+          path: uploaded_images
+
+      - name: 🐳 Load Downloaded Docker Image
+        run: |
+          docker load -i uploaded_images/latest_image.tar
+          echo "✅ Successfully loaded Docker image from artifact."
+
       - name: 🔍 Verify Scan Reports Exist
         run: |
           echo "🔹 Checking for scan reports in current directory..."
           ls scan_reports/
-          if [ ! -f "scan_reports/trivy-${{ env.IMAGE_NAME }}.txt" ] || [ ! -f "scan_reports/grype-${{ env.IMAGE_NAME }}.txt" ]; then
+          if [ ! -f "scan_reports/trivy-${{ github.event.inputs.docker_image }}.txt" ] || [ ! -f "scan_reports/grype-${{ github.event.inputs.docker_image }}.txt" ]; then
             echo "❌ ERROR: Scan reports are missing!"
             exit 1
           fi
@@ -145,7 +147,7 @@ jobs:
           mysql -h 127.0.0.1 -u flask_user docker_management <<EOF
           INSERT INTO scan_reports (user_id, scanner_name, file_name, report_text)
           VALUES 
-          (1, 'Trivy', 'trivy-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/trivy-${{ env.IMAGE_NAME }}.txt')),
-          (1, 'Grype', 'grype-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/grype-${{ env.IMAGE_NAME }}.txt'));
+          (1, 'Trivy', 'trivy-${{ github.event.inputs.docker_image }}.txt', LOAD_FILE('scan_reports/trivy-${{ github.event.inputs.docker_image }}.txt')),
+          (1, 'Grype', 'grype-${{ github.event.inputs.docker_image }}.txt', LOAD_FILE('scan_reports/grype-${{ github.event.inputs.docker_image }}.txt'));
           EOF
           echo "✅ Scan reports successfully inserted into MySQL!"
