@@ -1,8 +1,12 @@
 name: Docker Scanner CI/CD
 
 on:
-  workflow_dispatch:
-
+  workflow_dispatch:  # ✅ Add this to allow manual triggering
+    inputs:
+      docker_image:
+        description: "Docker image to scan"
+        required: false
+        default: "latest"
 jobs:
     scan:
     runs-on: ubuntu-latest
