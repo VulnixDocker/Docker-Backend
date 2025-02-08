@@ -23,17 +23,15 @@ jobs:
           sleep 5
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
-      - name: 🐳 Save Docker Image Locally
+      - name: 🔍 Verify Docker Image Exists
         run: |
-          mkdir -p uploaded_images
-          docker save -o uploaded_images/latest_image.tar ${{ github.event.inputs.docker_image }}
-          echo "✅ Docker image saved as uploaded_images/latest_image.tar"
-
-      - name: 📤 Upload Docker Image Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Docker Image
-          path: uploaded_images/latest_image.tar
+          echo "🔹 Checking if Docker image exists..."
+          docker images
+          if ! docker image inspect ${{ github.event.inputs.docker_image }} > /dev/null 2>&1; then
+            echo "🚨 ERROR: Docker image '${{ github.event.inputs.docker_image }}' does not exist!"
+            exit 1
+          fi
+          echo "✅ Docker image found: ${{ github.event.inputs.docker_image }}"
 
       - name: 🔍 Ensure scan_reports Directory Exists
         run: |
@@ -44,7 +42,7 @@ jobs:
         run: |
           IMAGE="${{ github.event.inputs.docker_image }}"
           echo "🔹 Running Trivy scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --scanners vuln "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
           echo "✅ Trivy scan completed!"
 
       - name: 🔍 Scan with Grype
@@ -98,17 +96,6 @@ jobs:
         with:
           name: Scanner Reports
           path: scan_reports
-
-      - name: 📥 Download Docker Image Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Docker Image
-          path: uploaded_images
-
-      - name: 🐳 Load Downloaded Docker Image
-        run: |
-          docker load -i uploaded_images/latest_image.tar
-          echo "✅ Successfully loaded Docker image from artifact."
 
       - name: 🔍 Verify Scan Reports Exist
         run: |
