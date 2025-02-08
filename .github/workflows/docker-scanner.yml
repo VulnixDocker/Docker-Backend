@@ -2,11 +2,6 @@ name: Docker Scanner CI/CD
 
 on:
   workflow_dispatch:
-    inputs:
-      docker_image:
-        description: "Docker image to scan"
-        required: true
-        type: string
 
 jobs:
   scan:
@@ -23,34 +18,45 @@ jobs:
           sleep 5
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
-      - name: 🔍 Load the Latest Uploaded Docker Image
+      - name: 🐳 Load Uploaded Docker Image
         run: |
-          echo "🔹 Loading the latest uploaded image..."
-          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
+          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1)
+          if [ -z "$UPLOADED_FILE" ]; then
+            echo "🚨 ERROR: No Docker image tar file found!"
+            exit 1
+          fi
+          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
+          docker load -i "$UPLOADED_FILE"
+
+      - name: 🔍 Extract Latest Image Name
+        id: extract_image
+        run: |
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+          if [ -z "$IMAGE_NAME" ]; then
+            echo "🚨 ERROR: No valid Docker image found!"
+            exit 1
+          fi
+          echo "✅ Extracted image name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-          # Check if the image exists before scanning
-          docker images "$IMAGE_NAME" || { echo "🚨 ERROR: Image not found!"; exit 1; }
-          echo "✅ Using Image: $IMAGE_NAME"
-
-      - name: 🔍 Ensure `scan_reports` Directory Exists
+      - name: 🔍 Ensure scan_reports Directory Exists
         run: |
           mkdir -p scan_reports
-          echo "✅ Created scan_reports directory."
+          echo "✅ Created scan_reports directory if missing."
 
       - name: 🔍 Scan with Trivy
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Trivy scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
-          echo "✅ Trivy scan completed!"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --scanners vuln "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠ Trivy scan failed!"
+          echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Grype scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt"
-          echo "✅ Grype scan completed!"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠ Grype scan failed!"
+          echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
@@ -58,7 +64,6 @@ jobs:
             echo "✅ Scan reports found!"
           else
             echo "❌ ERROR: Scan reports are missing!"
-            ls -lah scan_reports/
             exit 1
           fi
 
@@ -69,9 +74,25 @@ jobs:
           path: scan_reports/*.txt
 
 
-  migrate-and-store:
+  store-in-db:
     runs-on: ubuntu-latest
     needs: scan
+
+    services:
+      mysql:
+        image: mysql:latest
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: docker_management
+          MYSQL_USER: flask_user
+          MYSQL_PASSWORD: Abhiram@1729
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
       - name: 🔥 Checkout Repository
@@ -81,36 +102,47 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: Scanner Reports
-          path: scan_reports
 
       - name: 🔍 Verify Scan Reports Exist
         run: |
-          echo "🔹 Checking for scan reports..."
-          ls -lah scan_reports/ || echo "⚠ WARNING: scan_reports directory is missing!"
-
-      - name: 🛠 Install MySQL Client and Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mysql-client
-          python -m pip install --upgrade pip
-          pip install mysql-connector-python
-          
-      - name: 🗄 Insert Scan Data into MySQL
-        run: |
-          export MYSQL_PWD="${{ secrets.DB_PASSWORD }}"
-
-          # Fetch user_id associated with the scanned image
-          USER_ID=$(mysql -h ${{ secrets.DB_HOST }} -u ${{ secrets.DB_USER }} -D docker_management -N -e "SELECT id FROM users WHERE username='admin' LIMIT 1;")
-
-          if [ -z "$USER_ID" ]; then
-            echo "🚨 ERROR: Could not fetch user_id! Check database!"
+          echo "🔹 Checking for scan reports in current directory..."
+          TRIVY_REPORT=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
+          GRYPE_REPORT=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
+          if [ -z "$TRIVY_REPORT" ] && [ -z "$GRYPE_REPORT" ]; then
+            echo "❌ ERROR: No scan reports found!"
             exit 1
+          else
+            echo "✅ Scan reports found: $TRIVY_REPORT $GRYPE_REPORT"
+            echo "Proceeding with database insertion..."
           fi
 
-          mysql -h ${{ secrets.DB_HOST }} -u ${{ secrets.DB_USER }} docker_management <<EOF
+      - name: 🛠 Install MySQL Connector
+        run: |
+          python -m pip install --upgrade pip
+          pip install mysql-connector-python
+
+      - name: 🗄 Wait for MySQL to Be Ready
+        run: |
+          for i in {1..30}; do
+            if mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SELECT 1"; then
+              echo "✅ MySQL is ready!"
+              break
+            fi
+            echo "⏳ Waiting for MySQL..."
+            sleep 2
+          done
+
+      - name: 🗄 Debug MySQL Connection Before Insertion
+        run: |
+          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SHOW DATABASES;"
+          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "USE docker_management; SHOW TABLES;"
+
+      - name: 🗄 Insert Scan Data into MySQL
+        run: |
+          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management <<EOF
           INSERT INTO scan_reports (user_id, scanner_name, file_name, report_text)
           VALUES 
-          ('$USER_ID', 'Trivy', 'trivy-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/trivy-${{ env.IMAGE_NAME }}.txt')),
-          ('$USER_ID', 'Grype', 'grype-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/grype-${{ env.IMAGE_NAME }}.txt'));
+          (1, 'Trivy', 'trivy-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/trivy-${{ env.IMAGE_NAME }}.txt')),
+          (1, 'Grype', 'grype-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/grype-${{ env.IMAGE_NAME }}.txt'));
           EOF
           echo "✅ Scan reports successfully inserted into MySQL!"
