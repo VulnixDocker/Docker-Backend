@@ -2,6 +2,11 @@ name: Docker Scanner CI/CD
 
 on:
   workflow_dispatch:
+    inputs:
+      docker_image:
+        description: "Docker image to scan"
+        required: true
+        type: string
 
 jobs:
   scan:
@@ -18,26 +23,11 @@ jobs:
           sleep 5
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
-      - name: 🔍 Extract Latest Image Name
-        id: extract_image
+      - name: 🔍 Extract Docker Image Name
         run: |
-          echo "🔹 Checking available Docker images..."
-          docker images
-
-          if [ -z "$(docker images -q)" ]; then
-            echo "🚨 No Docker images found! Pulling a test image..."
-            docker pull alpine:latest
-          fi
-
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
-
-          if [ -z "$IMAGE_NAME" ]; then
-            echo "🚨 ERROR: No valid Docker image found even after pulling!"
-            exit 1
-          fi
-
-          echo "✅ Extracted image name: $IMAGE_NAME"
+          IMAGE_NAME="${{ github.event.inputs.docker_image }}"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          echo "✅ Extracted Docker Image: $IMAGE_NAME"
 
       - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
@@ -49,12 +39,14 @@ jobs:
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Trivy scan on $IMAGE..."
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
+          echo "✅ Trivy scan completed!"
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Grype scan on $IMAGE..."
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt"
+          echo "✅ Grype scan completed!"
 
       - name: 🔍 Ensure Scan Reports Exist
         run: |
@@ -92,27 +84,29 @@ jobs:
           echo "🔹 Checking for scan reports..."
           ls -lah scan_reports/ || echo "⚠ WARNING: scan_reports directory is missing!"
 
-      - name: 🛠 Install MySQL Client and Skeema
+      - name: 🛠 Install MySQL Client and Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y mysql-client
           python -m pip install --upgrade pip
           pip install mysql-connector-python
           
-          echo "🔹 Installing Skeema via npm..."
-          npm install -g skeema
-          skeema --version
-
-      - name: 🗄 Run Skeema Migrations
-        run: |
-          skeema push --host=${{ secrets.DB_HOST }} --user=${{ secrets.DB_USER }} --password=${{ secrets.DB_PASSWORD }} --schema=docker_management
-
       - name: 🗄 Insert Scan Data into MySQL
         run: |
           export MYSQL_PWD="${{ secrets.DB_PASSWORD }}"
+
+          # Fetch user_id associated with the scanned image
+          USER_ID=$(mysql -h ${{ secrets.DB_HOST }} -u ${{ secrets.DB_USER }} -D docker_management -N -e "SELECT id FROM users WHERE username='admin' LIMIT 1;")
+
+          if [ -z "$USER_ID" ]; then
+            echo "🚨 ERROR: Could not fetch user_id! Check database!"
+            exit 1
+          fi
+
           mysql -h ${{ secrets.DB_HOST }} -u ${{ secrets.DB_USER }} docker_management <<EOF
-          INSERT INTO scan_reports (scanner_name, file_name, report_text)
-          VALUES ('Trivy', 'trivy-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/trivy-${{ env.IMAGE_NAME }}.txt')),
-                 ('Grype', 'grype-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/grype-${{ env.IMAGE_NAME }}.txt'));
-          " docker_management
+          INSERT INTO scan_reports (user_id, scanner_name, file_name, report_text)
+          VALUES 
+          ('$USER_ID', 'Trivy', 'trivy-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/trivy-${{ env.IMAGE_NAME }}.txt')),
+          ('$USER_ID', 'Grype', 'grype-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/grype-${{ env.IMAGE_NAME }}.txt'));
+          EOF
           echo "✅ Scan reports successfully inserted into MySQL!"
