@@ -23,11 +23,15 @@ jobs:
           sleep 5
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
-      - name: 🔍 Extract Docker Image Name
+      - name: 🔍 Load the Latest Uploaded Docker Image
         run: |
+          echo "🔹 Loading the latest uploaded image..."
           IMAGE_NAME="${{ github.event.inputs.docker_image }}"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
-          echo "✅ Extracted Docker Image: $IMAGE_NAME"
+
+          # Check if the image exists before scanning
+          docker images "$IMAGE_NAME" || { echo "🚨 ERROR: Image not found!"; exit 1; }
+          echo "✅ Using Image: $IMAGE_NAME"
 
       - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
