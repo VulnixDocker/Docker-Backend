@@ -1,14 +1,15 @@
 name: Docker Scanner CI/CD
 
 on:
-  workflow_dispatch:  # ✅ Add this to allow manual triggering
+  workflow_dispatch:  # ✅ Allows triggering via GitHub API & Flask
     inputs:
       docker_image:
         description: "Docker image to scan"
         required: false
         default: "latest"
+
 jobs:
-    scan:
+  scan:  # ✅ Fix indentation
     runs-on: ubuntu-latest
 
     steps:
@@ -22,11 +23,10 @@ jobs:
           sleep 5
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
-      # ✅ Upload Docker Image as an Artifact
       - name: 📤 Upload Docker Image as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Uploaded-Docker-Image  # ✅ Fix artifact name
+          name: Uploaded-Docker-Image
           path: uploaded_images/*.tar
 
       - name: 🔍 Verify Docker Image Exists
@@ -39,7 +39,7 @@ jobs:
           fi
           echo "✅ Docker image found: ${{ github.event.inputs.docker_image }}"
 
-      - name: 🔍 Ensure scan_reports Directory Exists
+      - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
           mkdir -p scan_reports
           echo "✅ Created scan_reports directory if missing."
@@ -71,7 +71,6 @@ jobs:
         with:
           name: Scanner Reports
           path: scan_reports/*.txt
-
 
   store-in-db:
     runs-on: ubuntu-latest
