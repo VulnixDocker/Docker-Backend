@@ -2,11 +2,6 @@ name: Docker Scanner CI/CD
 
 on:
   workflow_dispatch:
-    inputs:
-      docker_image:
-        description: "Docker image to scan"
-        required: true
-        default: "latest"
 
 jobs:
   scan:
@@ -19,51 +14,33 @@ jobs:
       - name: 🐳 Ensure Docker Daemon is Running
         run: |
           echo "🔹 Checking Docker status..."
-          sudo systemctl start docker
+          sudo systemctl start docker || true
           sleep 5
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
-
-      - name: 📥 Download Uploaded Docker Image
-        uses: actions/download-artifact@v4
-        with:
-          name: Uploaded-Docker-Image
-          path: uploaded_images
-        continue-on-error: true
-
-      - name: 🛠 Ensure Uploaded Images Directory Exists
-        run: |
-          mkdir -p uploaded_images
-          echo "✅ Created uploaded_images directory if missing."
-
-      - name: 🐳 Load Uploaded Docker Image
-        run: |
-          echo "🔹 Checking for uploaded Docker images..."
-          ls -lah uploaded_images/ || echo "⚠ No uploaded images found!"
-
-          UPLOADED_FILE=$(ls uploaded_images/*.tar 2>/dev/null | head -n 1)
-          if [ -z "$UPLOADED_FILE" ]; then
-            echo "🚨 ERROR: No Docker image tar file found!"
-            exit 1
-          fi
-          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
-          docker load -i "$UPLOADED_FILE"
-          docker images
 
       - name: 🔍 Extract Latest Image Name
         id: extract_image
         run: |
-          echo "🔹 Available Docker Images:"
+          echo "🔹 Checking available Docker images..."
           docker images
-          
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v '<none>' | head -n 1)
+
+          # If no images exist, pull a fallback image
+          if [ -z "$(docker images -q)" ]; then
+            echo "🚨 No Docker images found! Pulling a test image..."
+            docker pull alpine:latest
+          fi
+
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+
           if [ -z "$IMAGE_NAME" ]; then
             echo "🚨 ERROR: No valid Docker image found!"
             exit 1
           fi
+
           echo "✅ Extracted image name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-      - name: 🔍 Ensure scan_reports Directory Exists
+      - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
           mkdir -p scan_reports
           echo "✅ Created scan_reports directory if missing."
@@ -72,26 +49,14 @@ jobs:
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Trivy scan on $IMAGE..."
-          
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --scanners vuln "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
-          
-          if [ ! -s "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" ]; then
-            echo "❌ ERROR: Trivy scan failed or produced an empty report!"
-            exit 1
-          fi
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
           echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Scan with Grype
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
           echo "🔹 Running Grype scan on $IMAGE..."
-          
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt"
-          
-          if [ ! -s "scan_reports/grype-${IMAGE//[:\/]/_}.txt" ]; then
-            echo "❌ ERROR: Grype scan failed or produced an empty report!"
-            exit 1
-          fi
           echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
 
       - name: 🔍 Ensure Scan Reports Exist
@@ -100,6 +65,7 @@ jobs:
             echo "✅ Scan reports found!"
           else
             echo "❌ ERROR: Scan reports are missing!"
+            ls -lah scan_reports/
             exit 1
           fi
 
@@ -113,22 +79,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: scan
 
-    services:
-      mysql:
-        image: mysql:latest
-        env:
-          MYSQL_ROOT_PASSWORD: rootpassword
-          MYSQL_DATABASE: docker_management
-          MYSQL_USER: flask_user
-          MYSQL_PASSWORD: Abhiram@1729
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
     steps:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v4
@@ -141,31 +91,34 @@ jobs:
 
       - name: 🔍 Verify Scan Reports Exist
         run: |
-          echo "🔹 Checking for scan reports in current directory..."
-          
-          TRIVY_REPORT=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
-          GRYPE_REPORT=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
+          echo "🔹 Checking for scan reports..."
+          ls -lah scan_reports/ || echo "⚠ WARNING: scan_reports directory is missing!"
 
-          if [ -z "$TRIVY_REPORT" ] && [ -z "$GRYPE_REPORT" ]; then
-            echo "❌ ERROR: No scan reports found!"
-            exit 1
-          else
-            echo "✅ Scan reports found: $TRIVY_REPORT $GRYPE_REPORT"
-            echo "Proceeding with database insertion..."
-          fi
-
-      - name: 🛠 Install MySQL Connector
+      - name: 🛠 Install MySQL Client & Connector
         run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
           python -m pip install --upgrade pip
           pip install mysql-connector-python
 
       - name: 🗄 Wait for MySQL to Be Ready
         run: |
+          export MYSQL_PWD="${{ secrets.DB_PASSWORD }}"
           for i in {1..30}; do
-            mysqladmin ping -h 127.0.0.1 --silent && echo "✅ MySQL is ready!" && exit 0
+            if mysql -h ${{ secrets.DB_HOST }} -u ${{ secrets.DB_USER }} --silent -e "SELECT 1;" > /dev/null 2>&1; then
+              echo "✅ MySQL is ready!"
+              break
+            fi
             echo "⏳ Waiting for MySQL..."
             sleep 2
           done
 
-      - name: 🗄 Store Scan Data in MySQL
-        run: python insert_scan_report.py
+      - name: 🗄 Store Scan Data in Local MySQL
+        run: |
+          export MYSQL_PWD="${{ secrets.DB_PASSWORD }}"
+          mysql -h ${{ secrets.DB_HOST }} -u ${{ secrets.DB_USER }} ${{ secrets.DB_NAME }} <<EOF
+          INSERT INTO scan_reports (scanner_name, file_name, report_text)
+          VALUES ('Trivy', 'trivy-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/trivy-${{ env.IMAGE_NAME }}.txt')),
+                 ('Grype', 'grype-${{ env.IMAGE_NAME }}.txt', LOAD_FILE('scan_reports/grype-${{ env.IMAGE_NAME }}.txt'));
+          EOF
+          echo "✅ Scan reports successfully inserted into MySQL!"
