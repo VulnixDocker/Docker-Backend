@@ -23,9 +23,20 @@ jobs:
           sleep 5
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
+      - name: 📥 Download Uploaded Docker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: Uploaded-Docker-Image
+          path: uploaded_images
+
+      - name: 🛠 Ensure Uploaded Images Directory Exists
+        run: |
+          mkdir -p uploaded_images
+          echo "✅ Created uploaded_images directory if missing."
+
       - name: 🐳 Load Uploaded Docker Image
         run: |
-          echo "🔹 Listing uploaded Docker images..."
+          echo "🔹 Checking for uploaded Docker images..."
           ls -lah uploaded_images/ || echo "⚠ No uploaded images found!"
 
           UPLOADED_FILE=$(ls uploaded_images/*.tar 2>/dev/null | head -n 1)
