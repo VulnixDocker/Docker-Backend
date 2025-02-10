@@ -28,6 +28,7 @@ jobs:
         with:
           name: Uploaded-Docker-Image
           path: uploaded_images
+        continue-on-error: true
 
       - name: 🛠 Ensure Uploaded Images Directory Exists
         run: |
