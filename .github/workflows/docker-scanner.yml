@@ -2,6 +2,11 @@ name: Docker Scanner CI/CD
 
 on:
   workflow_dispatch:
+    inputs:
+      docker_image:
+        description: "Docker image to scan"
+        required: true
+        default: "latest"
 
 jobs:
   scan:
