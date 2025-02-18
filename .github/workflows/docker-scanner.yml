@@ -29,7 +29,7 @@ jobs:
       - name: 🔑 Log in to Docker Hub
         run: echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
 
-       - name: 🏷️ Load, Tag, and Push Docker Image
+      - name: 🏷️ Load, Tag, and Push Docker Image
         run: |
           mkdir -p uploaded_images
           echo "📂 Listing files in uploaded_images before loading:"
@@ -45,6 +45,10 @@ jobs:
           echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
           docker load -i "$UPLOADED_FILE"
 
+          IMAGE_NAME="abhiram6542/${{ github.event.inputs.docker_image }}:latest"
+          docker tag $UPLOADED_FILE $IMAGE_NAME
+          docker push $IMAGE_NAME
+          echo "✅ Image pushed: $IMAGE_NAME"
 
   scan:
     runs-on: ubuntu-latest
@@ -56,24 +60,25 @@ jobs:
 
       - name: 🔍 Verify the Docker Image is Available
         run: |
-          IMAGE_NAME="abhiram6542/web-dvwa:latest"
+          IMAGE_NAME="abhiram6542/${{ github.event.inputs.docker_image }}:latest"
           if [ -z "$IMAGE_NAME" ]; then
             echo "🚨 ERROR: No Docker image provided!"
             exit 1
           fi
 
           # 🔹 Check if image exists locally
-          if docker images "$IMAGE_NAME" | grep -q "$IMAGE_NAME"; then
-            echo "✅ Using Local Docker Image: $IMAGE_NAME"
+          if docker pull "$IMAGE_NAME"; then
+            echo "✅ Using Pulled Docker Image: $IMAGE_NAME"
           else
-            echo "❌ ERROR: Image $IMAGE_NAME not found locally!"
+            echo "❌ ERROR: Image $IMAGE_NAME not found!"
             exit 1
           fi
 
       - name: 🔍 Scan with Trivy
         run: |
-          IMAGE="abhiram6542/web-dvwa:latest"
+          IMAGE="abhiram6542/${{ github.event.inputs.docker_image }}:latest"
           echo "🔹 Running Trivy scan on $IMAGE..."
+          mkdir -p scan_reports
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
           echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
 
@@ -153,11 +158,11 @@ jobs:
               scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
           );
 
-          LOAD DATA LOCAL INFILE 'scan_reports/trivy-${{ env.IMAGE_NAME }}.txt'
+          LOAD DATA LOCAL INFILE 'scan_reports/trivy-${{ github.event.inputs.docker_image }}.txt'
           INTO TABLE scan_reports
           FIELDS TERMINATED BY '\n'
           LINES TERMINATED BY '\n'
-          (@report_text) SET scanner_name='Trivy', file_name='trivy-${{ env.IMAGE_NAME }}.txt', report_text=@report_text;
+          (@report_text) SET scanner_name='Trivy', file_name='trivy-${{ github.event.inputs.docker_image }}.txt', report_text=@report_text;
           "
 
       - name: ✅ Confirm Data is Stored in MySQL
