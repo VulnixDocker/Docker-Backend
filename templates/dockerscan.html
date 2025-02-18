@@ -138,13 +138,15 @@
             const fileInput = $("#dockerImage")[0].files[0];
     
             if (!fileInput) {
-                alert("Please select a Docker image file to upload.");
+                alert("❌ Please select a Docker image file to upload.");
                 return;
             }
     
             let formData = new FormData();
             formData.append("docker_image", fileInput);
     
+            $("#uploadButton").prop("disabled", true).text("Uploading...");
+            
             $.ajax({
                 url: "/upload",
                 type: "POST",
@@ -153,23 +155,26 @@
                 processData: false,
                 success: function (response) {
                     uploadedImage = response.image_name;
-                    alert("Image uploaded successfully!");
+                    alert("✅ Image uploaded successfully!");
+                    $("#uploadButton").prop("disabled", false).text("Upload Image");
                     $("#startFullScanButton").prop("disabled", false);
                 },
                 error: function () {
-                    alert("Error uploading file.");
+                    alert("❌ Error uploading file.");
+                    $("#uploadButton").prop("disabled", false).text("Upload Image");
                 }
             });
         });
     
         function startScan() {
             if (!uploadedImage) {
-                alert("Please upload an image before scanning.");
+                alert("❌ Please upload an image before scanning.");
                 return;
             }
     
             $("#scanStatus").show().text("Starting scan...");
             $("#completedMessage").hide();
+            $("#startFullScanButton").prop("disabled", true).text("Scanning...");
     
             $.ajax({
                 url: "/trigger_scan",
@@ -180,23 +185,20 @@
                     simulateProgress();
                 },
                 error: function () {
-                    alert("Error triggering scan.");
+                    alert("❌ Error triggering scan.");
+                    $("#startFullScanButton").prop("disabled", false).text("Start Full Scan");
                 }
             });
         }
     
         function simulateProgress(stepIndex = 0) {
             const scanSteps = [
-                "Testing Docker misconfigurations...",
-                "Checking Docker CVE vulnerabilities...",
-                "Scanning for open ports...",
-                "Validating container runtime settings...",
-                "Analyzing image layers...",
-                "Checking for outdated dependencies...",
-                "Scanning for malware signatures...",
-                "Validating Dockerfile best practices...",
-                "Ensuring compliance with CIS benchmarks...",
-                "Performing final risk analysis..."
+                "🚀 Testing Docker misconfigurations...",
+                "🔎 Checking CVE vulnerabilities...",
+                "🌐 Scanning for open ports...",
+                "📦 Analyzing image layers...",
+                "🔍 Ensuring compliance with CIS benchmarks...",
+                "✅ Scan completed successfully!"
             ];
     
             if (stepIndex < scanSteps.length) {
@@ -208,11 +210,13 @@
             } else {
                 $("#scanStatus").hide();
                 $("#completedMessage").show();
+                $("#startFullScanButton").prop("disabled", false).text("Start Full Scan");
             }
         }
     
         $("#startFullScanButton").click(() => startScan());
     </script>
+    
     
 </body>
 </html>

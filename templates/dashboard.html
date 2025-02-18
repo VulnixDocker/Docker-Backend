@@ -5,22 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scan Reports</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { color: #333; }
-        pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
     </style>
 </head>
 <body>
-    <h1>Scan Reports</h1>
-    
-    {% if reports %}
-        {% for report in reports %}
-            <h2>{{ report.scanner }} Report: {{ report.file_name }}</h2>
-            <pre>{{ report.content }}</pre>
-            <hr>
-        {% endfor %}
-    {% else %}
-        <p>No scan reports available.</p>
-    {% endif %}
+
+<h2>🛡 Docker Image Scan Reports</h2>
+
+<table>
+    <tr>
+        <th>Scanner</th>
+        <th>Report File</th>
+        <th>Scanned At</th>
+        <th>Actions</th>
+    </tr>
+    {% for report in reports %}
+    <tr>
+        <td>{{ report[1] }}</td>  <!-- Scanner Name -->
+        <td>{{ report[2] }}</td>  <!-- Report File -->
+        <td>{{ report[3] }}</td>  <!-- Scanned Timestamp -->
+        <td>
+            <a href="{{ url_for('download_report', report_id=report[0]) }}">📥 Download</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
 </body>
 </html>

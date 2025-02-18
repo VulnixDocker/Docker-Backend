@@ -16,7 +16,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "your_secret_key")
 
 # 🔹 Database Configuration (Secure with Env Variables)
 app.config['MYSQL_HOST'] = os.getenv("MYSQL_HOST", "localhost")
-app.config['MYSQL_USER'] = os.getenv("MYSQL_USER", "flask_user")
+app.config['MYSQL_USER'] = os.getenv("MYSQL_USER", "Docker_User")
 app.config['MYSQL_PASSWORD'] = os.getenv("MYSQL_PASSWORD", "Abhiram@1729")
 app.config['MYSQL_DB'] = os.getenv("MYSQL_DB", "docker_management")
 
@@ -97,10 +97,14 @@ def login():
         flash("Invalid username or password!", "error")
         return redirect(url_for('login_page'))
 
-# 🔹 Upload & Load Docker Image into Docker Daemon
+import platform
+
 @app.route('/upload', methods=['POST'])
 def upload_image():
     try:
+        if 'user_id' not in session:
+            return jsonify({"error": "Unauthorized access!"}), 403
+
         if 'docker_image' not in request.files:
             return jsonify({"error": "No file uploaded!"}), 400
 
@@ -114,106 +118,127 @@ def upload_image():
         print(f"✅ File saved successfully: {file_path}")
 
         # 🔹 Load Image into Docker
-        load_result = subprocess.run(["docker", "load", "-i", file_path], capture_output=True, text=True, check=True)
+        load_result = subprocess.run(["docker", "load", "-i", file_path], capture_output=True, text=True)
+
+        if load_result.returncode != 0:
+            print(f"❌ ERROR: Docker load failed! {load_result.stderr}")
+            return jsonify({"error": "Failed to load image into Docker", "details": load_result.stderr}), 500
+
         print(f"✅ Docker Load Output:\n{load_result.stdout}")
 
-        # 🔹 Identify Latest Image
-        latest_image = subprocess.run(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}", "--no-trunc"],
-                                      capture_output=True, text=True, check=True).stdout.split("\n")[0]
+        # 🔹 Extract Latest Image
+        latest_image = subprocess.run(
+            ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}", "--no-trunc"],
+            capture_output=True, text=True
+        ).stdout.strip().split("\n")[0]  # Get the first image from the list
 
         if not latest_image:
             return jsonify({"error": "Failed to identify latest Docker image"}), 500
 
         print(f"✅ Latest Docker image: {latest_image}")
 
-        # 🔹 Trigger GitHub Actions Automatically
-        headers = {
-            "Accept": "application/vnd.github.v3+json",
-            "Authorization": f"Bearer {GITHUB_TOKEN}"
-        }
-        payload = {
-            "ref": "main",
-            "inputs": {}  # No need to pass image name anymore
-        }
+        return jsonify({"message": "Docker image uploaded successfully!", "image_name": latest_image}), 200
 
-        response = requests.post(GITHUB_ACTIONS_TRIGGER_URL, headers=headers, json=payload)
-
-        if response.status_code == 204:
-            return jsonify({"message": "Scan triggered successfully!", "image_name": latest_image}), 200
-        else:
-            return jsonify({"error": "Failed to trigger scan!", "details": response.json()}), 500
+    except FileNotFoundError as e:
+        print(f"❌ ERROR: File not found! {e}")
+        return jsonify({"error": "File not found!", "details": str(e)}), 500
 
     except subprocess.CalledProcessError as e:
+        print(f"❌ ERROR: Docker command failed - {e.stderr}")
         return jsonify({"error": "Failed to load image into Docker", "details": e.stderr}), 500
 
     except Exception as e:
+        print(f"❌ ERROR: Unexpected issue occurred - {str(e)}")
+        import traceback
+        traceback.print_exc()  # Print full error traceback
         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 
-# 🔹 Trigger CI/CD Scan via GitHub Actions
+
+
+
 @app.route('/trigger_scan', methods=['POST'])
 def trigger_scan():
     if 'user_id' not in session:
         return jsonify({"error": "Unauthorized access!"}), 403
 
     data = request.json
-    image_name = data.get("image_name")  # Use extracted image name
+    image_name = data.get("image_name")
 
     if not image_name:
-        return jsonify({"error": "No image provided!"}), 400
+        return jsonify({"error": "No Docker image specified!"}), 400
 
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "Authorization": f"Bearer {GITHUB_TOKEN}"
     }
+
     payload = {
         "ref": "main",
-        "inputs": {"docker_image": image_name}  # Send correct image name
+        "inputs": {
+            "docker_image": image_name  # Ensure correct input format
+        }
     }
-
-    print("🔹 Sending Request to GitHub Actions")
-    print(f"🔹 Headers: {headers}")
-    print(f"🔹 Payload: {payload}")
 
     try:
         response = requests.post(GITHUB_ACTIONS_TRIGGER_URL, headers=headers, json=payload)
-        print(f"🔹 Response Code: {response.status_code}")
-        print(f"🔹 Response Content: {response.text}")
 
         if response.status_code == 204:
-            return jsonify({"message": "Scan triggered successfully!"}), 200
+            print(f"✅ Scan triggered successfully for {image_name}!")
+            return jsonify({"message": "Scan started successfully!", "image": image_name}), 200
         else:
-            return jsonify({"error": "Failed to trigger scan!", "details": response.json()}), 500
+            print(f"❌ ERROR: Failed to trigger scan! {response.text}")
+            return jsonify({"error": "Failed to trigger scan!", "details": response.text}), 500
 
     except Exception as e:
-        print(f"❌ ERROR: Unexpected issue occurred: {str(e)}")
-        print(traceback.format_exc())
+        print(f"❌ ERROR: Unexpected issue occurred - {str(e)}")
         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
+
+
 
 
 # 🔹 View Scan Reports on Dashboard
 @app.route('/dashboard')
 def dashboard():
-    # 🔹 List all scan reports
-    scan_reports = glob.glob("trivy-*.txt") + glob.glob("grype-*.txt")
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
 
-    if not scan_reports:
-        print("❌ No scan reports found in the directory!")
-        return render_template("dashboard.html", reports=[])
+    user_id = session['user_id']
 
-    reports = []
-
-    # Read reports and store contents
-    for report in scan_reports:
-        with open(report, "r", encoding="utf-8") as file:
-            reports.append({
-                "scanner": "Trivy" if "trivy" in report else "Grype",
-                "file_name": os.path.basename(report),
-                "content": file.read()
-            })
-
-    print(f"✅ Loaded {len(reports)} scan reports successfully!")
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT id, scanner_name, file_name, scanned_at FROM scan_reports WHERE user_id = %s ORDER BY scanned_at DESC", (user_id,))
+    reports = cur.fetchall()
+    cur.close()
 
     return render_template("dashboard.html", reports=reports)
+
+
+# 🔹 User Signup Route
+@app.route('/signup', methods=['POST'])
+def signup():
+    username = request.form.get('signup_username')  # Match HTML name
+    email = request.form.get('signup_email')  # Match HTML name
+    password = request.form.get('signup_password')  # Match HTML name
+    confirm_password = request.form.get('signup_confirm_password')  # Match HTML name
+
+    if password != confirm_password:
+        flash("Passwords do not match!", "error")
+        return redirect(url_for('login_page'))  # Redirect to login page if passwords mismatch
+
+    # Hash the password before storing it
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+
+    try:
+        cur = mysql.connection.cursor()
+        cur.execute("INSERT INTO users (username, email, password_hash, is_admin) VALUES (%s, %s, %s, %s)",
+                    (username, email, hashed_password, False))
+        mysql.connection.commit()
+        cur.close()
+        flash("Signup successful! You can now log in.", "success")
+        return redirect(url_for('login_page'))
+    except Exception as e:
+        flash(f"Error: {str(e)}", "error")
+        return redirect(url_for('login_page'))
+
 
 # 🔹 Download Scan Report
 @app.route('/download/<int:report_id>')
@@ -224,18 +249,19 @@ def download_report(report_id):
     user_id = session['user_id']
 
     cur = mysql.connection.cursor()
-    cur.execute("SELECT scanner_name, report_text FROM scan_reports WHERE id = %s AND user_id = %s", (report_id, user_id))
+    cur.execute("SELECT scanner_name, file_name, report_text FROM scan_reports WHERE id = %s AND user_id = %s", (report_id, user_id))
     report = cur.fetchone()
     cur.close()
 
     if report:
-        filename = f"{report[0]}_scan_report.txt"
+        filename = f"{report[1]}"
         with open(filename, "w", encoding="utf-8") as f:
-            f.write(report[1])
+            f.write(report[2])
 
         return send_file(filename, as_attachment=True)
 
     return "Report not found or unauthorized", 403
+
 
 # 🔹 Admin Dashboard
 @app.route('/admin')
@@ -248,3 +274,10 @@ if __name__ == '__main__':
     with app.app_context():
         initialize_admin()
     app.run(debug=True)
+
+
+
+
+
+
+
