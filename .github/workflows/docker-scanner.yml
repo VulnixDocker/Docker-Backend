@@ -31,11 +31,19 @@ jobs:
 
       - name: 🏷️ Load, Tag, and Push Docker Image
         run: |
-          UPLOADED_FILE=$(ls uploaded_images/*.tar | head -n 1)
+          # Ensure the directory exists
+          mkdir -p uploaded_images
+
+          # Find the latest uploaded image file
+          UPLOADED_FILE=$(ls uploaded_images/*.tar 2>/dev/null | head -n 1)
+
           if [ -z "$UPLOADED_FILE" ]; then
             echo "🚨 ERROR: No Docker image tar file found!"
+            echo "📂 Available files in uploaded_images/:"
+            ls -lah uploaded_images/ || echo "🚨 Directory does not exist!"
             exit 1
           fi
+
           echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
           docker load -i "$UPLOADED_FILE"
 
@@ -43,6 +51,7 @@ jobs:
           docker tag vulnerables/web-dvwa:latest $IMAGE_NAME
           docker push $IMAGE_NAME
           echo "✅ Image pushed: $IMAGE_NAME"
+
 
   scan:
     runs-on: ubuntu-latest
