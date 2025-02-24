@@ -41,11 +41,27 @@ jobs:
           IMAGE="${{ env.IMAGE_NAME }}"
           docker images | grep "$IMAGE" || echo "🚨 ERROR: Image not found!"
 
-      - name: 🏗️ Pull Image Before Scanning
+     - name: 🏗️ Load Docker Image from Upload
         run: |
-          IMAGE="${{ env.IMAGE_NAME }}"
-          echo "🔹 Pulling latest image before scanning..."
-          docker pull "$IMAGE" || (echo "🚨 ERROR: Failed to pull image!" && exit 1)
+          UPLOADED_FILE=$(ls uploaded_images/*.tar 2>/dev/null | head -n 1)
+          
+          if [ -z "$UPLOADED_FILE" ]; then
+            echo "🚨 ERROR: No Docker image tar file found!"
+            exit 1
+          fi
+          
+          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
+          docker load -i "$UPLOADED_FILE"
+
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+          if [ -z "$IMAGE_NAME" ]; then
+            echo "🚨 ERROR: Failed to load image!"
+            exit 1
+          fi
+
+          echo "✅ Loaded Docker Image: $IMAGE_NAME"
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+
 
       - name: 🔍 Scan with Trivy
         run: |
