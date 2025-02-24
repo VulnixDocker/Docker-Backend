@@ -1,23 +1,15 @@
 name: Docker Scanner CI/CD
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
-    inputs:
-      docker_image:
-        description: "Docker Image to Scan"
-        required: true
-        type: string
 
 jobs:
-  build_and_scan:
-    runs-on: self-hosted  # Ensure self-hosted runner is used
+  scan:
+    runs-on: self-hosted  # ✅ Runs on Kali Linux self-hosted runner
 
     steps:
-      - name: 🔥 Checkout Code
-        uses: actions/checkout@v3
+      - name: 🔥 Checkout Repository
+        uses: actions/checkout@v4
 
       - name: 🐳 Ensure Docker Daemon is Running
         run: |
@@ -25,13 +17,11 @@ jobs:
           sudo systemctl start docker || echo "🚨 Docker already running!"
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
-      - name: 📂 Verify Uploaded Docker Image
+      - name: 🐳 Load Uploaded Docker Image
         run: |
-          echo "📂 Checking uploaded images..."
-          ls -lah uploaded_images/ || echo "❌ ERROR: Directory missing!"
+          echo "📂 Checking uploaded Docker images..."
+          ls -lah uploaded_images/
 
-      - name: 🏗️ Load & Tag Uploaded Docker Image
-        run: |
           UPLOADED_FILE=$(ls uploaded_images/*.tar 2>/dev/null | head -n 1)
 
           if [ -z "$UPLOADED_FILE" ]; then
@@ -42,40 +32,139 @@ jobs:
           echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
           docker load -i "$UPLOADED_FILE"
 
-          # Extract image name from tar
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v '<none>' | head -n 1)
+      - name: 🔍 Extract Latest Image Name
+        id: extract_image
+        run: |
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
 
           if [ -z "$IMAGE_NAME" ]; then
-            echo "🚨 ERROR: Unable to extract image name!"
+            echo "🚨 ERROR: No valid Docker image found!"
             exit 1
           fi
 
-          echo "✅ Image Loaded: $IMAGE_NAME"
+          echo "✅ Extracted image name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-      - name: 🔍 Scan Uploaded Image with Trivy
+      - name: 🔍 Ensure `scan_reports` Directory Exists
         run: |
           mkdir -p scan_reports
-          echo "🔹 Running Trivy scan on $IMAGE_NAME..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE_NAME" > "scan_reports/trivy-${IMAGE_NAME//[:\/]/_}.txt"
-          echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE_NAME//[:\/]/_}.txt"
+          echo "✅ Created scan_reports directory if missing."
 
-      - name: 📤 Upload Scan Reports
-        uses: actions/upload-artifact@v3
+      - name: 🔍 Scan with Trivy
+        run: |
+          IMAGE="${{ env.IMAGE_NAME }}"
+          echo "🔹 Running Trivy scan on $IMAGE..."
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt" || echo "⚠ Trivy scan failed!"
+          echo "✅ Trivy report saved: scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
+
+      - name: 🔍 Scan with Grype
+        run: |
+          IMAGE="${{ env.IMAGE_NAME }}"
+          echo "🔹 Running Grype scan on $IMAGE..."
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt" || echo "⚠ Grype scan failed!"
+          echo "✅ Grype report saved: scan_reports/grype-${IMAGE//[:\/]/_}.txt"
+
+      - name: 🔍 Ensure Scan Reports Exist
+        run: |
+          echo "🔹 Verifying scan reports..."
+          if [[ ! -s "scan_reports/trivy-${IMAGE_NAME//[:\/]/_}.txt" || ! -s "scan_reports/grype-${IMAGE_NAME//[:\/]/_}.txt" ]]; then
+            echo "❌ ERROR: Scan reports are missing!"
+            exit 1
+          fi
+          echo "✅ Scan reports found!"
+
+      - name: 📤 Upload Scan Reports as Artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: Scanner Reports
           path: scan_reports/*.txt
 
-      - name: 🔑 Log in & Push to Docker Hub
-        if: success()
+
+  store-in-db:
+    runs-on: self-hosted  # ✅ Runs on Kali Linux self-hosted runner
+    needs: scan
+
+    services:
+      mysql:
+        image: mysql:latest
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: docker_management
+          MYSQL_USER: flask_user
+          MYSQL_PASSWORD: Abhiram@1729
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=localhost --user=flask_user --password=Abhiram@1729"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: 🔥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📥 Download Scan Reports
+        uses: actions/download-artifact@v4
+        with:
+          name: Scanner Reports
+
+      - name: 🔍 Verify Scan Reports Exist
         run: |
-          echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+          echo "🔹 Checking for scan reports in current directory..."
+          TRIVY_REPORT=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
+          GRYPE_REPORT=$(ls scan_reports/grype-*.txt 2>/dev/null || echo "")
 
-          TAGGED_IMAGE="${{ secrets.DOCKER_HUB_USERNAME }}/${{ github.event.inputs.docker_image }}:latest"
+          if [ -z "$TRIVY_REPORT" ] || [ -z "$GRYPE_REPORT" ]; then
+            echo "❌ ERROR: No scan reports found!"
+            exit 1
+          else
+            echo "✅ Scan reports found: $TRIVY_REPORT $GRYPE_REPORT"
+            echo "Proceeding with database insertion..."
+          fi
 
-          echo "✅ Tagging Image: $TAGGED_IMAGE"
-          docker tag $IMAGE_NAME $TAGGED_IMAGE
+      - name: 🛠 Install MySQL Connector
+        run: |
+          sudo apt update
+          sudo apt install -y mysql-client python3-pip
+          pip install mysql-connector-python
 
-          echo "🚀 Pushing Image to Docker Hub..."
-          docker push $TAGGED_IMAGE
-          echo "✅ Image pushed to Docker Hub: $TAGGED_IMAGE"
+      - name: 🗄 Wait for MySQL to Be Ready
+        run: |
+          for i in {1..30}; do
+            if mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 -e "SELECT 1"; then
+              echo "✅ MySQL is ready!"
+              break
+            fi
+            echo "⏳ Waiting for MySQL..."
+            sleep 2
+          done
+
+      - name: 🗄 Store Scan Data in MySQL
+        run: |
+          echo "📂 Storing scan reports in MySQL..."
+          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management -e "
+          CREATE TABLE IF NOT EXISTS scan_reports (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              scanner_name VARCHAR(50),
+              file_name VARCHAR(255),
+              report_text TEXT,
+              scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          LOAD DATA LOCAL INFILE 'scan_reports/trivy-${{ env.IMAGE_NAME }}.txt'
+          INTO TABLE scan_reports
+          FIELDS TERMINATED BY '\n'
+          LINES TERMINATED BY '\n'
+          (@report_text) SET scanner_name='Trivy', file_name='trivy-${{ env.IMAGE_NAME }}.txt', report_text=@report_text;
+
+          LOAD DATA LOCAL INFILE 'scan_reports/grype-${{ env.IMAGE_NAME }}.txt'
+          INTO TABLE scan_reports
+          FIELDS TERMINATED BY '\n'
+          LINES TERMINATED BY '\n'
+          (@report_text) SET scanner_name='Grype', file_name='grype-${{ env.IMAGE_NAME }}.txt', report_text=@report_text;
+          "
+
+      - name: ✅ Confirm Data is Stored in MySQL
+        run: |
+          mysql -h 127.0.0.1 -u flask_user -pAbhiram@1729 docker_management -e "SELECT * FROM scan_reports;"
