@@ -22,11 +22,12 @@ jobs:
           sudo systemctl start docker || echo "🚨 Docker already running!"
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
-      - name: 🔑 Log in to Docker Hub
+     - name: 🔑 Log in to Docker Hub
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
         run: echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
+
 
       - name: 🔍 Extract Image Name from Input
         id: extract_image
@@ -39,15 +40,30 @@ jobs:
           echo "✅ Extracted Image Name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-      - name: 🔍 Verify Docker Image Exists Locally
+     - name: 🏗️ Load Docker Image from Upload
         run: |
-          IMAGE="${{ env.IMAGE_NAME }}"
-          if ! docker images | grep -q "$IMAGE"; then
-            echo "🚨 ERROR: Image not found locally. Pulling from Docker Hub..."
-            docker pull "$IMAGE" || (echo "❌ ERROR: Failed to pull image!" && exit 1)
-          else
-            echo "✅ Docker Image Found: $IMAGE"
+          echo "🔹 Checking for uploaded images..."
+          ls -lah uploaded_images/ || echo "🚨 No uploaded images found!"
+
+          UPLOADED_FILE=$(ls uploaded_images/*.tar 2>/dev/null | head -n 1)
+
+          if [ -z "$UPLOADED_FILE" ]; then
+            echo "🚨 ERROR: No Docker image tar file found!"
+            exit 1
           fi
+
+          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
+          docker load -i "$UPLOADED_FILE"
+
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+          if [ -z "$IMAGE_NAME" ]; then
+            echo "🚨 ERROR: Failed to load image!"
+            exit 1
+          fi
+
+          echo "✅ Loaded Docker Image: $IMAGE_NAME"
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+
 
       - name: 🔍 Scan with Trivy
         run: |
