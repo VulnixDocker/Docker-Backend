@@ -22,6 +22,9 @@ jobs:
           sudo systemctl start docker || echo "🚨 Docker already running!"
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
+      - name: 🔑 Log in to Docker Hub
+        run: echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+
       - name: 🔍 Extract Image Name from Input
         id: extract_image
         run: |
@@ -32,6 +35,17 @@ jobs:
           fi
           echo "✅ Extracted Image Name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+
+      - name: 🔍 Verify Docker Image Exists
+        run: |
+          IMAGE="${{ env.IMAGE_NAME }}"
+          docker images | grep "$IMAGE" || echo "🚨 ERROR: Image not found!"
+
+      - name: 🏗️ Pull Image Before Scanning
+        run: |
+          IMAGE="${{ env.IMAGE_NAME }}"
+          echo "🔹 Pulling latest image before scanning..."
+          docker pull "$IMAGE" || (echo "🚨 ERROR: Failed to pull image!" && exit 1)
 
       - name: 🔍 Scan with Trivy
         run: |
