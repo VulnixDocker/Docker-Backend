@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      docker_image:
+        description: "Docker Image to Scan"
+        required: true
+        type: string
 
 jobs:
   build_and_scan:
@@ -38,7 +43,7 @@ jobs:
           docker load -i "$UPLOADED_FILE"
 
           # Extract image name from tar
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
+          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v '<none>' | head -n 1)
 
           if [ -z "$IMAGE_NAME" ]; then
             echo "🚨 ERROR: Unable to extract image name!"
@@ -61,11 +66,16 @@ jobs:
           name: Scanner Reports
           path: scan_reports/*.txt
 
-      - name: 🔑 Log in & Push to Docker Hub (Optional)
+      - name: 🔑 Log in & Push to Docker Hub
         if: success()
         run: |
           echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
-          TAGGED_IMAGE="${{ secrets.DOCKER_HUB_USERNAME }}/$(echo $IMAGE_NAME | cut -d':' -f1):latest"
+
+          TAGGED_IMAGE="${{ secrets.DOCKER_HUB_USERNAME }}/${{ github.event.inputs.docker_image }}:latest"
+
+          echo "✅ Tagging Image: $TAGGED_IMAGE"
           docker tag $IMAGE_NAME $TAGGED_IMAGE
+
+          echo "🚀 Pushing Image to Docker Hub..."
           docker push $TAGGED_IMAGE
           echo "✅ Image pushed to Docker Hub: $TAGGED_IMAGE"
