@@ -1,12 +1,16 @@
 name: Docker Scanner CI/CD
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       docker_image:
         description: "Docker Image to Scan"
         required: true
         type: string
+
 
 jobs:
   scan:
