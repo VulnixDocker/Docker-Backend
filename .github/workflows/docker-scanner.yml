@@ -22,6 +22,12 @@ jobs:
           mkdir -p uploaded_images
           ls -lah uploaded_images/
 
+      - name: 📥 Debug - Show File Path & Permissions
+        run: |
+          echo "🔍 Checking uploaded images..."
+          ls -lah uploaded_images/
+          echo "✅ File structure verified."
+
       - name: 📤 Upload Docker Image as Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -48,9 +54,10 @@ jobs:
           name: uploaded-docker-image
           path: uploaded_images/
 
-      - name: 🏗️ Verify Downloaded Artifact
+      - name: 🏗️ Ensure Uploaded Images Directory Exists
         run: |
-          echo "🔹 Checking for downloaded images..."
+          echo "🔹 Checking for uploaded images..."
+          mkdir -p uploaded_images
           ls -lah uploaded_images/
 
       - name: 🏗️ Load Docker Image from Upload
