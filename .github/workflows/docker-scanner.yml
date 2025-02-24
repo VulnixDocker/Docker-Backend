@@ -21,7 +21,6 @@ jobs:
           echo "🔹 Checking for uploaded images..."
           mkdir -p uploaded_images
           cd uploaded_images/
-          ls -lah uploaded_images/
 
       - name: 📥 Debug - Show File Path & Permissions
         run: |
