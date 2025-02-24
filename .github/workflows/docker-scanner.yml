@@ -1,16 +1,12 @@
 name: Docker Scanner CI/CD
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_dispatch:  # ✅ Ensure API trigger works
     inputs:
       docker_image:
         description: "Docker Image to Scan"
         required: true
         type: string
-
 
 jobs:
   scan:
@@ -27,7 +23,10 @@ jobs:
           docker info || (echo "🚨 ERROR: Docker is not running!" && exit 1)
 
       - name: 🔑 Log in to Docker Hub
-        run: echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
+        run: echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
 
       - name: 🔍 Extract Image Name from Input
         id: extract_image
@@ -40,32 +39,15 @@ jobs:
           echo "✅ Extracted Image Name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-      - name: 🔍 Verify Docker Image Exists
+      - name: 🔍 Verify Docker Image Exists Locally
         run: |
           IMAGE="${{ env.IMAGE_NAME }}"
-          docker images | grep "$IMAGE" || echo "🚨 ERROR: Image not found!"
-
-     - name: 🏗️ Load Docker Image from Upload
-        run: |
-          UPLOADED_FILE=$(ls uploaded_images/*.tar 2>/dev/null | head -n 1)
-          
-          if [ -z "$UPLOADED_FILE" ]; then
-            echo "🚨 ERROR: No Docker image tar file found!"
-            exit 1
+          if ! docker images | grep -q "$IMAGE"; then
+            echo "🚨 ERROR: Image not found locally. Pulling from Docker Hub..."
+            docker pull "$IMAGE" || (echo "❌ ERROR: Failed to pull image!" && exit 1)
+          else
+            echo "✅ Docker Image Found: $IMAGE"
           fi
-          
-          echo "✅ Found uploaded Docker image: $UPLOADED_FILE"
-          docker load -i "$UPLOADED_FILE"
-
-          IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n 1)
-          if [ -z "$IMAGE_NAME" ]; then
-            echo "🚨 ERROR: Failed to load image!"
-            exit 1
-          fi
-
-          echo "✅ Loaded Docker Image: $IMAGE_NAME"
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
-
 
       - name: 🔍 Scan with Trivy
         run: |
@@ -114,14 +96,11 @@ jobs:
       - name: 🔍 Verify Scan Reports Exist
         run: |
           echo "🔹 Checking for scan reports in scan_reports directory..."
-          TRIVY_REPORT=$(ls scan_reports/trivy-*.txt 2>/dev/null || echo "")
-
-          if [ -z "$TRIVY_REPORT" ]; then
+          if ! ls scan_reports/trivy-*.txt 1> /dev/null 2>&1; then
             echo "❌ ERROR: No scan reports found!"
             exit 1
-          else
-            echo "✅ Scan reports found: $TRIVY_REPORT"
           fi
+          echo "✅ Scan reports exist."
 
       - name: 🛠 Install MySQL Connector
         run: |
