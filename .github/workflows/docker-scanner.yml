@@ -16,11 +16,23 @@ jobs:
       - name: 🔥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 📥 Upload Docker Image as Artifact
+      - name: 🏗️ Ensure Uploaded Images Directory Exists
+        run: |
+          echo "🔹 Checking for uploaded images..."
+          mkdir -p uploaded_images
+          ls -lah uploaded_images/
+
+      - name: 📤 Upload Docker Image as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: uploaded-docker-image
           path: uploaded_images/
+          if-no-files-found: error
+
+      - name: 🔍 Debug - List Available Artifacts
+        run: |
+          echo "🔹 Listing artifacts in workflow run..."
+          gh run list --repo ${{ github.repository }}
 
   scan:
     runs-on: ubuntu-latest
@@ -36,10 +48,9 @@ jobs:
           name: uploaded-docker-image
           path: uploaded_images/
 
-      - name: 🏗️ Ensure Uploaded Images Directory Exists
+      - name: 🏗️ Verify Downloaded Artifact
         run: |
-          echo "🔹 Checking for uploaded images..."
-          mkdir -p uploaded_images
+          echo "🔹 Checking for downloaded images..."
           ls -lah uploaded_images/
 
       - name: 🏗️ Load Docker Image from Upload
@@ -48,6 +59,8 @@ jobs:
 
           if [ -z "$UPLOADED_FILE" ]; then
             echo "🚨 ERROR: No Docker image tar file found!"
+            echo "📂 Available files in uploaded_images/:"
+            ls -lah uploaded_images/
             exit 1
           fi
 
@@ -75,7 +88,6 @@ jobs:
         with:
           name: Scanner Reports
           path: scan_reports/*.txt
-
 
   store-in-db:
     runs-on: ubuntu-latest
