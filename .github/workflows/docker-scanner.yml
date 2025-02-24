@@ -26,6 +26,7 @@ jobs:
         run: |
           echo "🔍 Checking uploaded images..."
           ls -lah uploaded_images/
+          ls -lahs uploaded_image
           echo "✅ File structure verified."
 
       - name: 📤 Upload Docker Image as Artifact
