@@ -39,11 +39,14 @@ jobs:
           echo "✅ Extracted Image Name: $IMAGE_NAME"
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-      - name: 🏗️ Load Docker Image from Upload
+      - name: 🏗️ Ensure Uploaded Images Directory Exists
         run: |
           echo "🔹 Checking for uploaded images..."
+          mkdir -p uploaded_images  # ✅ Ensures directory exists
           ls -lah uploaded_images/ || echo "🚨 No uploaded images found!"
 
+      - name: 🏗️ Load Docker Image from Upload
+        run: |
           UPLOADED_FILE=$(ls uploaded_images/*.tar 2>/dev/null | head -n 1)
 
           if [ -z "$UPLOADED_FILE" ]; then
