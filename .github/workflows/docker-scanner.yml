@@ -9,8 +9,22 @@ on:
         type: string
 
 jobs:
+  upload-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📥 Upload Docker Image as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uploaded-docker-image
+          path: uploaded_images/
+
   scan:
     runs-on: ubuntu-latest
+    needs: upload-image  # Ensure image is uploaded first
 
     steps:
       - name: 🔥 Checkout Repository
@@ -55,12 +69,6 @@ jobs:
           mkdir -p scan_reports
           echo "🔹 Running Trivy scan on $IMAGE..."
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image "$IMAGE" > "scan_reports/trivy-${IMAGE//[:\/]/_}.txt"
-
-      - name: 🔍 Scan with Grype
-        run: |
-          IMAGE="${{ env.IMAGE_NAME }}"
-          echo "🔹 Running Grype scan on $IMAGE..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock anchore/grype "$IMAGE" > "scan_reports/grype-${IMAGE//[:\/]/_}.txt"
 
       - name: 📤 Upload Scan Reports
         uses: actions/upload-artifact@v4
